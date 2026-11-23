@@ -72,7 +72,7 @@ export function BinanceTicket({ idea, appKey, onClose, onNeedKey }: { idea: BnTr
               <div><dt>Both targets</dt><dd className="mono bull">+{p2.toFixed(2)} USDT</dd></div>
               <div><dt>Stop / targets</dt><dd className="mono">{fmt(idea.stop)} / {fmt(idea.target1)} / {fmt(idea.target2)}</dd></div>
             </dl>
-            <p className="ctx-note">Leverage multiplies profit and loss alike. Above {safeMax}x, Binance would liquidate you before this stop-loss, so those choices are off. Binance fees (about 0.05% per side) are not included.</p>
+            <p className="ctx-note">Leverage multiplies profit and loss alike. {safeMax < 10 ? `Above ${safeMax}x, Binance would liquidate you before this stop-loss, so those choices are off.` : "Viko caps leverage at 10x."} Binance fees (about 0.05% per side) are not included.</p>
             {live && <label className="check bn-agree"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I understand this places a real order with my own money.</label>}
             {err && <p className="err">{err}</p>}
             <div className="row">

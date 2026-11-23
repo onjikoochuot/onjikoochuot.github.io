@@ -138,7 +138,7 @@ export async function getNews(inst: Instrument, tf: string, technical: { verdict
 
 // ---------- Background picks (scanned every 15 minutes on the server) ----------
 export const PICKS = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-picks";
-export type PickSetup = Omit<Setup, "checks" | "labels"> & { failed: string[] };
+export type PickSetup = Pick<Setup, "name" | "degree" | "dir" | "entry" | "stop" | "invalidation" | "target1" | "target2" | "score" | "verdict" | "hardFail" | "triggered" | "rr1" | "rr2" | "expectBars">;
 export type PickRow = { symbol: string; tf: Tf; label: string; market: string; price: number; candle_t: number; scanned_at: string; verdict: Setup["verdict"] | null; dir: "long" | "short" | null; score: number | null; hard_fail: boolean | null; triggered: boolean | null; rr1: number | null; setup: PickSetup | null; news_warn: string | null };
 export async function getPicks(): Promise<{ rows: PickRow[]; now: number }> {
   const r = await fetch(`${PICKS}/list`);

@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
   const route = new URL(req.url).pathname.split("/").filter(Boolean).pop();
 
   if (route === "list") {
-    const { data, error } = await db.from("viko_picks").select("*").gt("scanned_at", new Date(Date.now() - 3 * 86400000).toISOString());
+    const { data, error } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(Date.now() - 2 * 86400000).toISOString());
     if (error) return json({ error: error.message }, 500);
     return json({ rows: data, now: Date.now() }, 200, { "Cache-Control": "public, max-age=60" });
   }
@@ -96,7 +96,8 @@ Deno.serve(async (req) => {
           const big = cal.find((e) => e.impact === "High" && cur.includes(e.currency) && e.at > now && e.at - now <= windowMs);
           if (big) news_warn = `${big.title} (${big.currency}) is due ${new Date(big.at).toISOString()}`;
           let setup = null;
-          if (s) { const { checks: _c, labels: _l, ...rest } = s; setup = { ...rest, failed: s.checks.filter((x: any) => x.pass === false).map((x: any) => x.label).slice(0, 6) }; }
+          // Only what the Picks screen needs, to keep the list small for phones.
+          if (s) setup = { name: s.name, degree: s.degree, dir: s.dir, entry: s.entry, stop: s.stop, invalidation: s.invalidation, target1: s.target1, target2: s.target2, score: s.score, verdict: s.verdict, hardFail: s.hardFail, triggered: s.triggered, rr1: s.rr1, rr2: s.rr2, expectBars: s.expectBars };
           rows.push({
             symbol: id, tf, label, market, price: last.c, candle_t: last.t, scanned_at: new Date().toISOString(),
             verdict: s?.verdict ?? null, dir: s?.dir ?? null, score: s?.score ?? null, hard_fail: s?.hardFail ?? null,
