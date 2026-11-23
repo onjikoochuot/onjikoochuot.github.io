@@ -13,12 +13,13 @@ import TipCard from "./components/TipCard";
 import Paper from "./components/Paper";
 import Markets from "./components/Markets";
 import Picks from "./components/Picks";
+import { BinanceTicket, BinanceView, type BnTradeIdea } from "./components/Binance";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
 const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly" };
-const VIEWS = ["analyse", "picks", "markets", "paper", "scan", "backtest", "journal", "rules"] as const;
+const VIEWS = ["analyse", "picks", "markets", "paper", "binance", "scan", "backtest", "journal", "rules"] as const;
 type View = typeof VIEWS[number];
-const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
+const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", binance: "Binance", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
 const viewFromHash = (): View => { const h = location.hash.slice(1) as View; return VIEWS.includes(h) ? h : "analyse"; };
 
 const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -50,6 +51,7 @@ export default function App() {
   const [ticket, setTicket] = useState<"long" | "short" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [bnIdea, setBnIdea] = useState<BnTradeIdea | null>(null);
   const [account, setAccount] = useState<number>(() => store("account", 10000));
   const [riskPct, setRiskPct] = useState<number>(() => store("risk", 1));
   const [jkey, setJkey] = useState<string>(() => store("jkey", ""));
@@ -86,6 +88,23 @@ export default function App() {
     return () => mq.removeEventListener("change", f);
   }, []);
 
+  // Tell an open window (or the installed app) when a newer version has been published.
+  const [updateReady, setUpdateReady] = useState(false);
+  useEffect(() => {
+    const mine = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/"]')?.getAttribute("src");
+    if (!mine) return;
+    const check = async () => {
+      try {
+        const html = await (await fetch(`./?check=${Date.now()}`, { cache: "no-store" })).text();
+        const live = html.match(/src="([^"]*\/assets\/[^"]+\.js)"/)?.[1];
+        if (live && live !== mine) setUpdateReady(true);
+      } catch { /* offline */ }
+    };
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    const t = setInterval(check, 5 * 60000);
+    addEventListener("focus", check); document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(t); removeEventListener("focus", check); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
   useEffect(() => { const f = () => setView(viewFromHash()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []);
   useEffect(() => save("watchlist2", list), [list]);
   useEffect(() => save("ind", ind), [ind]);
@@ -175,6 +194,12 @@ export default function App() {
 
   return (
     <div className="app">
+      {updateReady && (
+        <div className="update-bar" role="status">
+          <span>A new version of Viko is ready.</span>
+          <button className="btn primary" onClick={() => location.reload()}>Reload</button>
+        </div>
+      )}
       <header className="top">
         <a className="brand" href="#analyse" onClick={() => go("analyse")} aria-label="Viko home">
           <svg viewBox="0 0 40 20" aria-hidden="true"><path d="M1 15 L8 5 L13 11 L22 2 L27 9 L32 6 L39 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>
@@ -229,6 +254,9 @@ export default function App() {
                 <div className="trade-btns">
                   <button className="btn buy-btn" onClick={() => setTicket("long")} disabled={!lastPrice}>Buy</button>
                   <button className="btn sell-btn" onClick={() => setTicket("short")} disabled={!lastPrice}>Sell</button>
+                  {inst.market === "Crypto" && setup && !setup.hardFail && setup.verdict !== "NO TRADE" && (
+                    <button className="btn bn-btn" onClick={() => setBnIdea({ symbol: inst.id, label: inst.label, dir: setup.dir, entry: lastPrice ?? setup.entry, stop: setup.stop, target1: setup.target1, target2: setup.target2, setup: `${setup.name} (${setup.degree}), ${tf}`, score: setup.score })}>Trade on Binance</button>
+                  )}
                 </div>
                 <button className={`star big ${list.some((x) => x.id === inst.id) ? "on" : ""}`} onClick={() => toggle(inst)}>{list.some((x) => x.id === inst.id) ? "★ Watching" : "☆ Watch"}</button>
               </div>
@@ -250,7 +278,8 @@ export default function App() {
               {setup && <Ledger setup={setup} />}
             </>
           )}
-          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} />}
+          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} onBinance={setBnIdea} />}
+          {view === "binance" && <BinanceView appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "markets" && <Markets list={list} onOpen={open} onToggle={toggle} />}
           {view === "paper" && <Paper appKey={jkey} onNeedKey={() => setSettingsOpen(true)} watchlist={list.map((x) => ({ id: x.id, label: x.label }))} onOpenMarket={openById} />}
           {view === "scan" && <Scanner list={list} tf={tf} onOpen={open} />}
@@ -266,18 +295,19 @@ export default function App() {
             <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : v === "picks" ? "Picks" : VIEW_LABEL[v]}</span>
           </a>
         ))}
-        <button className={["scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
+        <button className={["binance", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
       </nav>
 
       {moreOpen && (
         <div className="modal sheet-modal" role="dialog" aria-modal="true" aria-label="More" onClick={() => setMoreOpen(false)}>
           <div className="sheet bottom" onClick={(e) => e.stopPropagation()}>
-            {(["scan", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
+            {(["binance", "scan", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
             <button className="sheet-item" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}>Settings</button>
           </div>
         </div>
       )}
 
+      {bnIdea && <BinanceTicket idea={bnIdea} appKey={jkey} onClose={() => setBnIdea(null)} onNeedKey={() => { setBnIdea(null); setSettingsOpen(true); }} />}
       {ticket && lastPrice !== undefined && analysis && (
         <OrderTicket side={ticket} label={inst.label} price={lastPrice} atr={analysis.ind.atr[analysis.ind.atr.length - 1]} setup={setup} account={account} riskPct={riskPct} busy={placing} onClose={() => setTicket(null)} onPlace={placeOrder} />
       )}

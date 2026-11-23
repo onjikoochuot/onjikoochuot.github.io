@@ -461,3 +461,25 @@ h1, h2, h3, h4 { margin: 0; font-weight: 500; }
   .picks-tabs { display: flex; width: 100%; } .picks-tabs button { flex: 1; padding: 8px 6px; }
 }
 .muted { color: var(--mist); font-size: 13.5px; max-width: 70ch; }
+.update-bar { position: sticky; top: 0; z-index: 60; display: flex; justify-content: center; align-items: center; gap: 14px; padding: 8px 16px; background: var(--brass); color: var(--on-brass); font-weight: 500; }
+.update-bar .btn.primary { background: var(--on-brass); color: var(--brass); border-color: var(--on-brass); padding: 4px 12px; }
+
+/* ---------- Binance ---------- */
+.btn.bn-btn { border-color: #C99A1C; color: #C99A1C; }
+html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
+.bn-mode { display: inline-block; margin: 0 0 8px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--tide) 22%, transparent); color: var(--foam); }
+.bn-mode.live { background: var(--anemone); color: #fff; }
+.bn-lev { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--mist); font-size: 13px; }
+.bn-lev .seg button:disabled { opacity: .35; cursor: not-allowed; text-decoration: line-through; }
+.bn-agree { flex-direction: row !important; align-items: center; gap: 8px !important; color: var(--foam) !important; }
+.bn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.bn-checks { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.bn-checks li::before { content: "●"; margin-right: 8px; }
+.bn-checks li.ok::before { color: var(--kelp); } .bn-checks li.bad::before { color: var(--anemone); }
+.bn-region { display: flex; flex-direction: column; gap: 4px; color: var(--mist); font-size: 13px; margin-bottom: 10px; }
+.bn-region select { background: var(--hull-2); border: 1px solid var(--rule); color: var(--foam); border-radius: 6px; padding: 7px 8px; max-width: 260px; }
+.bn-steps { margin-top: 18px; }
+.bn-steps code { font-family: var(--mono); font-size: 12.5px; background: var(--hull-2); padding: 1px 5px; border-radius: 4px; }
+.bn-warn { border-color: var(--anemone); margin-bottom: 14px; }
+.bn-warn p { color: var(--mist); }
+.tbl .sub { display: block; color: var(--mist); font-size: 12px; }

@@ -145,3 +145,24 @@ export async function getPicks(): Promise<{ rows: PickRow[]; now: number }> {
   if (!r.ok) throw new Error(`Couldn't load today's picks (${r.status}).`);
   return r.json();
 }
+
+// ---------- Binance USD-M futures (real or demo orders, keys stay on the server) ----------
+export const BINANCE = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-binance";
+export type BnMode = "demo" | "live";
+export type BnPosition = { symbol: string; qty: number; entry: number; mark: number; pnl: number; liq: number; leverage: number; margin: number; orders: { type: string; trigger: number; qty: number; close: boolean }[] };
+export type BnStatus = { mode: BnMode; region: string | null; reachable: boolean; keysSet: boolean; liveKeysSet: boolean; connected: boolean; balance?: number; available?: number; unrealized?: number; positions?: BnPosition[]; error?: string };
+export type BnOrderResult = { ok: true; mode: BnMode; symbol: string; dir: string; qty: number; entry: number; leverage: number; margin: number; stop: number; target1: number; target2: number; notes: string[] };
+export type BnHistory = { id: number; at: string; mode: BnMode; symbol: string; dir: string; qty: number; entry: number; leverage: number; margin: number; stop: number; target1: number; target2: number; status: string; note: string | null; label: string | null };
+export const BN_REGIONS: [string, string][] = [["ap-south-1", "Mumbai (recommended)"], ["ap-southeast-1", "Singapore"], ["ap-northeast-1", "Tokyo"], ["eu-central-1", "Frankfurt"], ["sa-east-1", "São Paulo"]];
+async function bfetch(key: string, region: string, route: string, body?: unknown, query = "") {
+  const r = await fetch(`${BINANCE}/${route}?forceFunctionRegion=${encodeURIComponent(region)}${query}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", "x-viko-key": key }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `Binance request failed (${r.status}).`);
+  return j;
+}
+export const binance = {
+  status: (key: string, region: string, mode: BnMode): Promise<BnStatus> => bfetch(key, region, "status", undefined, `&mode=${mode}`),
+  order: (key: string, region: string, b: Record<string, unknown>): Promise<BnOrderResult> => bfetch(key, region, "order", b),
+  close: (key: string, region: string, mode: BnMode, symbol: string) => bfetch(key, region, "close", { mode, symbol }),
+  history: (key: string, region: string): Promise<{ rows: BnHistory[] }> => bfetch(key, region, "history"),
+};

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Setup, Tf } from "../engine/types";
 import { fmt } from "../engine/analyze";
 import { duration, makeTip, TF_HOURS } from "../engine/layman";
+import type { BnTradeIdea } from "./Binance";
 import { getPicks, getQuotes, paper, save, store, type PickRow, type Quote } from "../lib/api";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
@@ -24,7 +25,9 @@ function isFresh(r: PickRow, now: number) {
   return now / 1000 - r.candle_t <= quiet;
 }
 
-export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void }) {
+export const ideaOf = (r: PickRow, price?: number): BnTradeIdea => ({ symbol: r.symbol, label: r.label, dir: r.setup!.dir, entry: price ?? r.setup!.entry, stop: r.setup!.stop, target1: r.setup!.target1, target2: r.setup!.target2, setup: `${r.setup!.name} (${r.setup!.degree}), ${r.tf}`, score: r.setup!.score });
+
+export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onBinance }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onBinance: (i: BnTradeIdea) => void }) {
   const [rows, setRows] = useState<PickRow[]>([]);
   const [now, setNow] = useState(Date.now());
   const [err, setErr] = useState("");
@@ -85,9 +88,9 @@ export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen }: {
       {msg && <p className="ok-msg">{msg}</p>}
       {loading && <p className="muted">Loading the latest scan…</p>}
 
-      {!loading && tab === "top" && <TopPicks list={approved(bar)} below={bar > 80 ? approved(80).filter((r) => r.score! < bar) : []} bar={bar} now={now} account={account} riskPct={riskPct} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
+      {!loading && tab === "top" && <TopPicks onBinance={onBinance} list={approved(bar)} below={bar > 80 ? approved(80).filter((r) => r.score! < bar) : []} bar={bar} now={now} account={account} riskPct={riskPct} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
       {!loading && tab === "combined" && <Combined fresh={fresh} onOpen={onOpen} />}
-      {!loading && tab === "day" && <DayPlan fresh={fresh} bar={bar} now={now} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
+      {!loading && tab === "day" && <DayPlan onBinance={onBinance} fresh={fresh} bar={bar} now={now} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
     </section>
   );
 }
@@ -127,7 +130,7 @@ function NewsWarn({ r }: { r: PickRow }) {
   return <p className="pick-warn">Big news first: {m ? m[1] : r.news_warn}{at ? ` at ${at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : ""}. Wait until it's out.</p>;
 }
 
-function TopPicks({ list, below, bar, now, account, riskPct, onOpen, onPaper, placing }: { list: PickRow[]; below: PickRow[]; bar: Bar; now: number; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string }) {
+function TopPicks({ onBinance, list, below, bar, now, account, riskPct, onOpen, onPaper, placing }: { list: PickRow[]; below: PickRow[]; bar: Bar; now: number; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string; onBinance: (i: BnTradeIdea) => void }) {
   const card = (r: PickRow, dim = false) => {
     const tip = makeTip(toSetup(r), r.label, r.tf, Math.floor(now / 1000), account, riskPct);
     return (
@@ -140,6 +143,7 @@ function TopPicks({ list, below, bar, now, account, riskPct, onOpen, onPaper, pl
           <span className="sub">Checked {ago(now - Date.parse(r.scanned_at))} at {fmt(r.price)}</span>
           <span className="pick-btns">
             <button className="btn" onClick={() => onOpen(r.symbol, r.tf)}>Open chart</button>
+            {r.market === "Crypto" && <button className="btn bn-btn" onClick={() => onBinance(ideaOf(r))}>Binance</button>}
             <button className="btn primary" onClick={() => onPaper(r)} disabled={placing === r.symbol + r.tf}>{placing === r.symbol + r.tf ? "Placing…" : "Paper trade"}</button>
           </span>
         </div>
@@ -248,7 +252,7 @@ function Combined({ fresh, onOpen }: { fresh: PickRow[]; onOpen: (id: string, tf
   );
 }
 
-function DayPlan({ fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow[]; bar: Bar; now: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string }) {
+function DayPlan({ onBinance, fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow[]; bar: Bar; now: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string; onBinance: (i: BnTradeIdea) => void }) {
   const [amount, setAmount] = useState<number>(() => store("dayAmount", 10000));
   const [cur, setCur] = useState<string>(() => store("dayCur", "KES"));
   const [count, setCount] = useState<number>(() => store("dayCount", 2));
@@ -335,6 +339,7 @@ function DayPlan({ fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow
                   <span className="sub">Pick {i + 1} of {plans.length}</span>
                   <span className="pick-btns">
                     <button className="btn" onClick={() => onOpen(r.symbol, r.tf)}>Open chart</button>
+                    {r.market === "Crypto" && !broken && <button className="btn bn-btn" onClick={() => onBinance(ideaOf(r, live))}>Binance</button>}
                     <button className="btn primary" onClick={() => onPaper(r)} disabled={placing === r.symbol + r.tf}>{placing === r.symbol + r.tf ? "Placing…" : "Practise on paper"}</button>
                   </span>
                 </div>
