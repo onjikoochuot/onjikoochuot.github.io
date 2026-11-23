@@ -18,7 +18,7 @@ const CORS = {
 };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 type DB = ReturnType<typeof createClient>;
-const MAX_OPEN = 8;
+const MAX_OPEN = 25;
 const TF_HOURS: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
 const ALL_TFS = Object.keys(TF_HOURS);
 
@@ -76,8 +76,12 @@ async function openTrade(db: DB, acc: any, b: any, livePrice: number) {
   const entry = livePrice;
   const stop = Number(b.stop), t1 = Number(b.target1), t2 = Number(b.target2 ?? b.target1);
   if (!(long ? stop < entry && t1 > entry : stop > entry && t1 < entry)) throw new Error(`Price has moved: at ${fmt(entry)} the stop or target is on the wrong side. Re-analyse first.`);
+  // Size: the amount you chose (paper dollars put into the trade), or by default 1% risk of the balance.
+  const amount = Number(b.amount);
+  if (b.amount != null && !(amount > 0)) throw new Error("Enter how much paper money to put into this trade.");
+  if (amount > Number(acc.balance)) throw new Error(`That's more than your paper balance (${Number(acc.balance).toFixed(2)}).`);
   const riskMoney = Number(acc.balance) * Number(acc.risk_pct) / 100;
-  const qty = riskMoney / Math.abs(entry - stop);
+  const qty = amount > 0 ? amount / entry : riskMoney / Math.abs(entry - stop);
   const row = {
     symbol: String(b.symbol).slice(0, 40), label: String(b.label ?? b.symbol).slice(0, 40), tf: String(b.tf).slice(0, 3), dir: long ? "long" : "short",
     setup: String(b.setup ?? "").slice(0, 120), score: Number(b.score ?? 0), source: b.source === "auto" ? "auto" : "manual",

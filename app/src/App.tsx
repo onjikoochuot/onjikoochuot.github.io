@@ -16,6 +16,7 @@ import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
 import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
 import RealTrade from "./components/RealTrade";
+import PaperTicket, { type PaperPick } from "./components/PaperTicket";
 import Alerts from "./components/Alerts";
 import HighPerformers, { LiveScan } from "./components/HighPerformers";
 import type { AutoPick } from "./lib/api";
@@ -63,6 +64,7 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [bnIdea, setBnIdea] = useState<BnTradeIdea | null>(null);
   const [realPicks, setRealPicks] = useState<AutoPick[] | null>(null);
+  const [paperPicks, setPaperPicks] = useState<PaperPick[] | null>(null);
   const [account, setAccount] = useState<number>(() => store("account", 10000));
   const [riskPct, setRiskPct] = useState<number>(() => store("risk", 1));
   const [jkey, setJkey] = useState<string>(() => store("jkey", ""));
@@ -117,7 +119,7 @@ export default function App() {
     return () => { clearInterval(t); removeEventListener("focus", check); document.removeEventListener("visibilitychange", onVis); };
   }, []);
   useEffect(() => { const f = () => setView(viewFromHash()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []);
-  useEffect(() => { setRealPicks(null); setBnIdea(null); }, [view]); // a ticket never follows you to another page
+  useEffect(() => { setRealPicks(null); setPaperPicks(null); setBnIdea(null); }, [view]); // a ticket never follows you to another page
   useEffect(() => save("watchlist2", list), [list]);
   useEffect(() => save("ind", ind), [ind]);
   useEffect(() => { save("inst", inst); save("tf", tf); }, [inst, tf]);
@@ -182,22 +184,16 @@ export default function App() {
       setSaving("Saved");
     } catch (e) { setSaving(""); setErr((e as Error).message); }
   };
-  const paperTrade = async () => {
+  const paperTrade = () => {
     if (!setup || !tip) return;
-    if (!jkey) { setSettingsOpen(true); return; }
-    setPlacing(true); setErr(""); setNote("");
-    try {
-      await paper.open(jkey, { symbol: inst.id, label: inst.label, tf, dir: setup.dir, stop: setup.stop, target1: setup.target1, target2: setup.target2, setup: `${setup.name} (${setup.degree})${setup.verdict === "APPROVED" ? "" : `, practice at ${setup.score}%`}`, score: setup.score, tip: [tip.headline, ...tip.steps].join("\n"), source: "manual" });
-      setNote(`Paper trade placed on ${inst.label}.`);
-    } catch (e) { setErr((e as Error).message); }
-    setPlacing(false);
+    setPaperPicks([{ symbol: inst.id, label: inst.label, market: inst.market, tf, dir: setup.dir, score: setup.score, name: `${setup.name} (${setup.degree})${setup.verdict === "APPROVED" ? "" : `, practice at ${setup.score}%`}`, stop: setup.stop, target1: setup.target1, target2: setup.target2, expectBars: setup.expectBars ?? 3, entry: lastPrice ?? setup.entry, tip: [tip.headline, ...tip.steps].join("\n") }]);
   };
   const canPaper = !!setup && !setup.hardFail && setup.triggered && setup.rr1 > 0;
-  const placeOrder = async (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean }) => {
+  const placeOrder = async (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean; amount: number }) => {
     if (!jkey) { setTicket(null); setSettingsOpen(true); return; }
     setPlacing(true); setErr(""); setNote("");
     try {
-      await paper.open(jkey, { symbol: inst.id, label: inst.label, tf, dir: o.dir, stop: o.stop, target1: o.target1, target2: o.target2, setup: o.fromSetup && setup ? `Manual order on ${setup.name} (${setup.score}%)` : "Manual order", score: o.fromSetup && setup ? setup.score : 0, tip: "", source: "manual" });
+      await paper.open(jkey, { symbol: inst.id, label: inst.label, tf, dir: o.dir, stop: o.stop, target1: o.target1, target2: o.target2, setup: o.fromSetup && setup ? `Manual order on ${setup.name} (${setup.score}%)` : "Manual order", score: o.fromSetup && setup ? setup.score : 0, tip: "", source: "manual", amount: o.amount });
       setNote(`Paper ${o.dir === "long" ? "buy" : "sell"} placed on ${inst.label}.`); setTicket(null);
     } catch (e) { setErr((e as Error).message); setTicket(null); }
     setPlacing(false);
@@ -293,15 +289,15 @@ export default function App() {
               {setup && <Ledger setup={setup} />}
             </>
           )}
-          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} onBinance={setBnIdea} onReal={setRealPicks} />}
+          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} onBinance={setBnIdea} onReal={setRealPicks} onPaper={setPaperPicks} />}
           {view === "auto" && <AutoTrade appKey={jkey} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t as Tf); openById(id); }} />}
           {view === "brokers" && <Brokers appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "guide" && <Guide go={go} />}
           {view === "alerts" && <Alerts appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "markets" && <Markets list={list} onOpen={open} onToggle={toggle} />}
           {view === "paper" && <Paper appKey={jkey} onNeedKey={() => setSettingsOpen(true)} watchlist={list.map((x) => ({ id: x.id, label: x.label }))} onOpenMarket={openById} />}
-          {view === "scan" && <LiveScan watchlist={list} appKey={jkey} account={account} riskPct={riskPct} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t); openById(id); }} onReal={setRealPicks} />}
-          {view === "top" && <HighPerformers appKey={jkey} account={account} riskPct={riskPct} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t); openById(id); }} onReal={setRealPicks} />}
+          {view === "scan" && <LiveScan watchlist={list} appKey={jkey} account={account} riskPct={riskPct} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t); openById(id); }} onReal={setRealPicks} onPaper={setPaperPicks} />}
+          {view === "top" && <HighPerformers appKey={jkey} account={account} riskPct={riskPct} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t); openById(id); }} onReal={setRealPicks} onPaper={setPaperPicks} />}
           {view === "backtest" && <Backtest symbol={inst.id} label={inst.label} tf={tf} />}
           {view === "journal" && <Journal keyValue={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "rules" && <Rulebook />}
@@ -326,6 +322,7 @@ export default function App() {
         </div>
       )}
 
+      {paperPicks && <PaperTicket picks={paperPicks} appKey={jkey} onClose={() => setPaperPicks(null)} onNeedKey={() => { setPaperPicks(null); setSettingsOpen(true); }} onDone={() => { setPaperPicks(null); go("paper"); }} />}
       {realPicks && <RealTrade picks={realPicks} appKey={jkey} onClose={() => setRealPicks(null)} onNeedKey={() => { setRealPicks(null); setSettingsOpen(true); }} onWatch={() => { setRealPicks(null); save("autoTab", "running"); go("auto"); }} />}
       {bnIdea && <BinanceTicket idea={bnIdea} appKey={jkey} onClose={() => setBnIdea(null)} onNeedKey={() => { setBnIdea(null); setSettingsOpen(true); }} />}
       {ticket && lastPrice !== undefined && analysis && (

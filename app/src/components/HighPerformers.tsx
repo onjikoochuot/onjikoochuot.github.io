@@ -3,9 +3,10 @@ import type { Tf } from "../engine/types";
 import { analyze } from "../engine/analyze";
 import { CATALOG, getCandles, getPicks, MARKETS, type AutoPick, type Instrument, type Market } from "../lib/api";
 import { isFresh } from "./Picks";
+import type { PaperPick } from "./PaperTicket";
 import { applyFilters, FilterBar, nameOf, OppList, TF_LABEL, TFS, useFilters, type Filters, type Opp } from "./Opps";
 
-type Common = { appKey: string; account: number; riskPct: number; onNeedKey: () => void; onOpen: (id: string, tf: Tf) => void; onReal: (p: AutoPick[]) => void };
+type Common = { appKey: string; account: number; riskPct: number; onNeedKey: () => void; onOpen: (id: string, tf: Tf) => void; onReal: (p: AutoPick[]) => void; onPaper: (p: PaperPick[]) => void };
 const ago = (ms: number) => { const m = Math.round(ms / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 const countBy = (list: Opp[], f: Filters) => Object.fromEntries((["All", ...MARKETS] as const).map((m) => [m, applyFilters(list, { ...f, market: m }).length]));
 

@@ -3,7 +3,8 @@ import type { Setup, Tf } from "../engine/types";
 import { fmt } from "../engine/analyze";
 import { duration, makeTip, TF_HOURS } from "../engine/layman";
 import type { BnTradeIdea } from "./Binance";
-import { getPicks, getQuotes, paper, save, store, type AutoPick, type PickRow, type Quote } from "../lib/api";
+import type { PaperPick } from "./PaperTicket";
+import { getPicks, getQuotes, save, store, type AutoPick, type PickRow, type Quote } from "../lib/api";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
 const TF_NAME: Record<Tf, string> = { "5m": "5-min", "15m": "15-min", "30m": "30-min", "1h": "1-hour", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly", "1M": "monthly" };
@@ -30,15 +31,15 @@ export const ideaOf = (r: PickRow, price?: number): BnTradeIdea => ({ symbol: r.
 export const pickOf = (r: PickRow): AutoPick => { const s = r.setup!; return { symbol: r.symbol, label: r.label, market: r.market, tf: r.tf, dir: s.dir, score: s.score, name: `${s.name} (${s.degree})`, stop: s.stop, target1: s.target1, target2: s.target2, expectBars: s.expectBars ?? 3 }; };
 type Sel = { has: (r: PickRow) => boolean; toggle: (r: PickRow) => void };
 
-export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onReal }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onBinance?: (i: BnTradeIdea) => void; onReal: (p: AutoPick[]) => void }) {
+export default function Picks({ account, riskPct, onOpen, onReal, onPaper }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onBinance?: (i: BnTradeIdea) => void; onReal: (p: AutoPick[]) => void; onPaper: (p: PaperPick[]) => void }) {
   const [rows, setRows] = useState<PickRow[]>([]);
   const [now, setNow] = useState(Date.now());
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>(() => store("picksTab", "top"));
   const [bar, setBar] = useState<Bar>(() => store("picksBar", 95));
-  const [msg, setMsg] = useState("");
-  const [placing, setPlacing] = useState("");
+  const msg = "";
+  const placing = "";
   const [picked, setPicked] = useState<Record<string, PickRow>>({});
   const sel: Sel = { has: (r) => !!picked[r.symbol + r.tf], toggle: (r) => setPicked((m) => { const k = r.symbol + r.tf, n = { ...m }; if (n[k]) delete n[k]; else n[k] = r; return n; }) };
   const chosen = Object.values(picked);
@@ -56,16 +57,9 @@ export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onR
   const approved = (min: number) => fresh.filter((r) => r.verdict === "APPROVED" && (r.score ?? 0) >= min).sort((a, b) => (b.score! - a.score!) || (b.rr1! - a.rr1!));
   const lastScan = rows.reduce((m, r) => Math.max(m, Date.parse(r.scanned_at)), 0);
 
-  const paperIt = async (r: PickRow) => {
-    if (!appKey) { onNeedKey(); return; }
-    const s = r.setup!;
+  const paperIt = (r: PickRow) => {
     const tip = makeTip(toSetup(r), r.label, r.tf, Math.floor(now / 1000), account, riskPct);
-    setPlacing(r.symbol + r.tf); setMsg("");
-    try {
-      await paper.open(appKey, { symbol: r.symbol, label: r.label, tf: r.tf, dir: s.dir, stop: s.stop, target1: s.target1, target2: s.target2, setup: `${s.name} (${s.degree}), from Today's picks`, score: s.score, tip: [tip.headline, ...tip.steps].join("\n"), source: "manual" });
-      setMsg(`Paper trade opened on ${r.label}. See it under Paper trading.`);
-    } catch (e) { setMsg((e as Error).message); }
-    setPlacing("");
+    onPaper([{ ...pickOf(r), entry: r.price, tip: [tip.headline, ...tip.steps].join("\n") }]);
   };
 
   return (

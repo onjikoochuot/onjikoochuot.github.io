@@ -1,5 +1,5 @@
 // Viko service worker: app shell offline, network-first for pages, cache-first for built assets. Market data is never cached here.
-const CACHE = "viko-v1.1.1";
+const CACHE = "viko-v1.1.2";
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./manifest.webmanifest", "./icon-192.png"]))); });
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (e) => {

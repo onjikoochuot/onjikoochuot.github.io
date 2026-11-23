@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import type { Setup, Tf } from "../engine/types";
 import { fmt } from "../engine/analyze";
 import { makeTip, TF_HOURS } from "../engine/layman";
-import { CATALOG, MARKETS, paper, save, store, type AutoPick, type Market, type PickSetup } from "../lib/api";
+import type { PaperPick } from "./PaperTicket";
+import { CATALOG, MARKETS, save, store, type AutoPick, type Market, type PickSetup } from "../lib/api";
 
 /** One market + timeframe + its best setup, from the background scan or a live scan. */
 export type Opp = { symbol: string; label: string; name: string; market: string; tf: Tf; price: number; setup: PickSetup; newsWarn?: string | null; checkedAt?: number };
@@ -65,33 +66,21 @@ export function FilterBar({ f, set, showTf = true, counts }: { f: Filters; set: 
 }
 
 /** Ranked list with select, open, paper and real-money actions. */
-export function OppList({ list, appKey, account, riskPct, onNeedKey, onOpen, onReal, empty }: { list: Opp[]; appKey: string; account: number; riskPct: number; onNeedKey: () => void; onOpen: (id: string, tf: Tf) => void; onReal: (p: AutoPick[]) => void; empty: React.ReactNode }) {
+export function OppList({ list, account, riskPct, onOpen, onReal, onPaper, empty }: { list: Opp[]; appKey: string; account: number; riskPct: number; onNeedKey: () => void; onOpen: (id: string, tf: Tf) => void; onReal: (p: AutoPick[]) => void; onPaper: (p: PaperPick[]) => void; empty: React.ReactNode }) {
   const [sel, setSel] = useState<Record<string, Opp>>({});
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState("");
   const key = (o: Opp) => o.symbol + o.tf;
   const chosen = Object.values(sel);
   const toggle = (o: Opp) => setSel((m) => { const n = { ...m }; if (n[key(o)]) delete n[key(o)]; else n[key(o)] = o; return n; });
 
-  const paperIt = async (os: Opp[]) => {
-    if (!appKey) { onNeedKey(); return; }
-    setBusy("paper"); setMsg("");
-    let ok = 0; const errs: string[] = [];
-    for (const o of os) {
-      const s = { ...o.setup, checks: [], labels: [] } as unknown as Setup;
-      const tip = makeTip(s, o.label, o.tf, Math.floor(Date.now() / 1000), account, riskPct);
-      try { await paper.open(appKey, { symbol: o.symbol, label: o.label, tf: o.tf, dir: o.setup.dir, stop: o.setup.stop, target1: o.setup.target1, target2: o.setup.target2, setup: `${o.setup.name} (${o.setup.degree}), ${o.tf}`, score: o.setup.score, tip: [tip.headline, ...tip.steps].join("\n"), source: "manual" }); ok++; }
-      catch (e) { errs.push(`${o.label}: ${(e as Error).message}`); }
-    }
-    setMsg(`${ok ? `${ok} paper trade${ok > 1 ? "s" : ""} opened. See them under Paper trading.` : ""} ${errs.join(" ")}`.trim());
-    setBusy("");
-  };
+  const paperIt = (os: Opp[]) => onPaper(os.map((o) => {
+    const tip = makeTip({ ...o.setup, checks: [], labels: [] } as unknown as Setup, o.label, o.tf, Math.floor(Date.now() / 1000), account, riskPct);
+    return { ...pickOfOpp(o), entry: o.price, tip: [tip.headline, ...tip.steps].join("\n") };
+  }));
   const allReady = useMemo(() => chosen.every(ready), [chosen]);
 
   if (!list.length) return <div className="empty-pick">{empty}</div>;
   return (
     <>
-      {msg && <p className="ok-msg">{msg}</p>}
       <ol className="opp-list">
         {list.map((o, i) => {
           const s = o.setup, [st, tone] = status(o), on = !!sel[key(o)], can = ready(o);
@@ -115,7 +104,7 @@ export function OppList({ list, appKey, account, riskPct, onNeedKey, onOpen, onR
               {o.newsWarn && <p className="pick-warn opp-warn">Big news soon: {o.newsWarn.replace(/ is due .*/, "")}.</p>}
               <div className="opp-act">
                 <button className="btn" onClick={() => onOpen(o.symbol, o.tf)}>Chart</button>
-                <button className="btn" disabled={!can || !!busy} title={can ? "" : "Not tradeable now: see the status under the score"} onClick={() => paperIt([o])}>Paper</button>
+                <button className="btn" disabled={!can} title={can ? "" : "Not tradeable now: see the status under the score"} onClick={() => paperIt([o])}>Paper</button>
                 <button className="btn primary" disabled={!can} title={can ? "" : "Not tradeable now: see the status under the score"} onClick={() => onReal([pickOfOpp(o)])}>Real money</button>
               </div>
             </li>
@@ -127,7 +116,7 @@ export function OppList({ list, appKey, account, riskPct, onNeedKey, onOpen, onR
           <span><b>{chosen.length}</b> selected{allReady ? "" : " (some aren't tradeable now; untick them to continue)"}</span>
           <span className="pick-btns">
             <button className="btn" onClick={() => setSel({})}>Clear</button>
-            <button className="btn" disabled={!allReady || !!busy} onClick={() => paperIt(chosen)}>{busy ? "Placing…" : "Paper trade all"}</button>
+            <button className="btn" disabled={!allReady} onClick={() => paperIt(chosen)}>Paper trade all</button>
             <button className="btn primary" disabled={!allReady} onClick={() => onReal(chosen.map(pickOfOpp))}>Trade {chosen.length === 1 ? "it" : `all ${chosen.length}`} with real money</button>
           </span>
         </div>
