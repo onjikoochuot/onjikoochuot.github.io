@@ -1,5 +1,7 @@
 # Viko
 
+**Live app:** https://onjikoochuot.github.io/ (install it on your phone: open the link, then "Add to Home Screen")
+
 A personal trading-analysis app built on two books:
 
 - **Glenn Neely, *Mastering Elliott Wave*** (NEoWave): wave counting and the primary engine.
@@ -20,6 +22,13 @@ A setup is approved only when:
 The 80% is *rule confluence*, not a promise of profit. Neither book publishes win rates, so the **Backtest** tab
 replays the engine over each market's history (no look-ahead) and reports the real hit rate of approved setups.
 
+## What's inside
+
+- **Analyse**: live chart (crypto streams tick by tick, everything else refreshes every 30 s), Elliott wave count, Wyckoff events, a plain-English tip, the verdict dial and the rule-by-rule checklist.
+- **Markets**: 77 markets across crypto, stocks (incl. JSE), indices, forex (incl. USD/KES) and commodities, with live prices. Search finds thousands more.
+- **Paper trading**: $10,000 of pretend money. Place a trade from any tip, or let the **autopilot** do it. The autopilot runs on Supabase every 15 minutes (pg_cron), so it works with the app closed. Half closes at target 1, the stop moves to entry, the rest closes at target 2 or the stop.
+- **Scan, Backtest, Journal, How it decides.**
+
 ## Structure
 
 ```
@@ -30,7 +39,9 @@ app/                     React + Vite + TypeScript front end (GitHub Pages)
     wyckoff.ts           phases A-E, climaxes, springs/UTADs, tests, SOS/SOW, LPS/LPSY
     backtest.ts          walk-forward replay
   tests/engine.test.ts   unit tests (run in CI before every deploy)
-supabase/functions/viko-market/   edge function: candles (Binance, Yahoo), symbol search, journal
+supabase/functions/viko-market/   edge function: candles, live quotes, symbol search, journal
+supabase/functions/viko-paper/    edge function: paper account, trades, autopilot (runs the same engine, bundled)
+supabase/functions/_shared/       market-data code shared by both (scripts/build-functions.sh copies it in)
 ```
 
 ## Data

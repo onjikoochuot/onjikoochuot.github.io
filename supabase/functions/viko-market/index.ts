@@ -1,11 +1,11 @@
-// Viko market-data + journal edge function.
+// Viko market data + journal.
 // GET  /viko-market/candles?symbol=crypto:BTCUSDT&tf=1d
+// GET  /viko-market/quotes?symbols=crypto:BTCUSDT,yahoo:AAPL
 // GET  /viko-market/search?q=apple
-// GET  /viko-market/journal            (header x-viko-key)
-// POST /viko-market/journal            (header x-viko-key)
-// PATCH /viko-market/journal?id=...    (header x-viko-key)
+// GET|POST|PATCH /viko-market/journal   (header x-viko-key)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { candles, quotes, sha256, TF, type Tf, UA } from "./market.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -15,59 +15,6 @@ const CORS = {
 const json = (b: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json", ...extra } });
 
-type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
-const TF = ["1h", "4h", "1d", "1w"] as const;
-type Tf = typeof TF[number];
-const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
-
-async function binance(sym: string, tf: Tf): Promise<Candle[]> {
-  const hosts = ["https://data-api.binance.vision", "https://api.binance.com", "https://api1.binance.com"];
-  let lastErr = "";
-  for (const h of hosts) {
-    try {
-      const r = await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=1000`);
-      if (!r.ok) { lastErr = `${h} ${r.status}`; continue; }
-      const rows = await r.json() as unknown[][];
-      return rows.map((k) => ({ t: Math.floor(Number(k[0]) / 1000), o: +k[1]!, h: +k[2]!, l: +k[3]!, c: +k[4]!, v: +k[5]! }));
-    } catch (e) { lastErr = String(e); }
-  }
-  throw new Error(`binance: ${lastErr}`);
-}
-
-async function yahoo(sym: string, tf: Tf): Promise<Candle[]> {
-  const cfg = { "1h": ["60m", "730d"], "4h": ["60m", "730d"], "1d": ["1d", "10y"], "1w": ["1wk", "max"] }[tf];
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${cfg[0]}&range=${cfg[1]}&includePrePost=false`;
-  let r = await fetch(url, { headers: UA });
-  if (!r.ok) r = await fetch(url.replace("query1", "query2"), { headers: UA });
-  if (!r.ok) throw new Error(`yahoo ${r.status}`);
-  const j = await r.json();
-  const res = j?.chart?.result?.[0];
-  if (!res) throw new Error(j?.chart?.error?.description ?? "yahoo: no data");
-  const ts: number[] = res.timestamp ?? [];
-  const q = res.indicators.quote[0];
-  let out: Candle[] = [];
-  for (let i = 0; i < ts.length; i++) {
-    const o = q.open[i], h = q.high[i], l = q.low[i], c = q.close[i];
-    if ([o, h, l, c].some((x) => x == null || Number.isNaN(x))) continue;
-    out.push({ t: ts[i], o, h, l, c, v: q.volume?.[i] ?? 0 });
-  }
-  if (tf === "4h") {
-    const agg: Candle[] = [];
-    for (const k of out) {
-      const bucket = Math.floor(k.t / 14400) * 14400;
-      const last = agg[agg.length - 1];
-      if (last && last.t === bucket) { last.h = Math.max(last.h, k.h); last.l = Math.min(last.l, k.l); last.c = k.c; last.v += k.v; }
-      else agg.push({ ...k, t: bucket });
-    }
-    out = agg;
-  }
-  return out.slice(-1000);
-}
-
-async function sha256(s: string) {
-  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
-}
 async function auth(req: Request, db: ReturnType<typeof createClient>) {
   const given = req.headers.get("x-viko-key");
   if (!given) return false;
@@ -84,10 +31,11 @@ Deno.serve(async (req) => {
       const symbol = url.searchParams.get("symbol") ?? "";
       const tf = (url.searchParams.get("tf") ?? "1d") as Tf;
       if (!TF.includes(tf)) return json({ error: "bad tf" }, 400);
-      const m = symbol.match(/^(crypto|yahoo):([A-Za-z0-9.=^\-]{1,24})$/);
-      if (!m) return json({ error: "bad symbol" }, 400);
-      const candles = m[1] === "crypto" ? await binance(m[2].toUpperCase(), tf) : await yahoo(m[2].toUpperCase(), tf);
-      return json({ symbol, tf, candles }, 200, { "Cache-Control": "public, max-age=60" });
+      return json({ symbol, tf, candles: await candles(symbol, tf) }, 200, { "Cache-Control": "public, max-age=30" });
+    }
+    if (route === "quotes") {
+      const list = (url.searchParams.get("symbols") ?? "").split(",").filter(Boolean).slice(0, 120);
+      return json({ quotes: await quotes(list), at: Date.now() }, 200, { "Cache-Control": "public, max-age=20" });
     }
     if (route === "search") {
       const q = (url.searchParams.get("q") ?? "").slice(0, 40);

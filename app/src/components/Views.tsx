@@ -157,9 +157,23 @@ export function Rulebook() {
       <p>A setup is approved only when all four of these hold: no rule marked "must pass" is broken; at least 80% of the weighted book rules agree; the entry trigger (a significant reversal bar, Wyckoff ch. 27) has fired; and the reward to target 1 is at least twice the risk. Anything less is "watch" or "no trade".</p>
       <h3>What the 80% means</h3>
       <p>It means 80% of the rules agree, by weight. Neither Neely nor Villahermosa gives win-rate figures, so no honest tool can claim "80% chance of success" from these books alone. The Backtest tab measures the real hit rate of the approved setups on each market's history. Treat that number, not the dial, as your estimate of the odds, and only once it rests on 30 or more trades.</p>
-      <h3>Sources</h3>
-      <p>Wyckoff rules (phases A–E, climaxes, springs and upthrusts, tests, effort and result, significant bars, entries and stops) are taken from Rubén Villahermosa, <i>The Wyckoff Methodology in Depth</i>, and cite the chapter on each line of the checklist. Elliott rules follow Glenn Neely, <i>Mastering Elliott Wave</i>: the Essential Construction Rules for impulses, the Rules of Extension, Overlap, Alternation and Similarity & Balance, the zigzag/flat distinction at a 61.8% wave-b retracement, and the Stage-1 post-pattern confirmation.</p>
-      <p className="fine">The project copy of Neely's book is a scanned PDF with no text layer, so the Neely rules were encoded from the published method rather than checked page by page against your copy. Send a text-searchable copy and they can be verified line by line.</p>
+      <h3>The Elliott rules, as Neely wrote them</h3>
+      <p>Every Neely rule in the checklist cites the page of <i>Mastering Elliott Wave</i> it comes from. Rules marked "must pass" void a setup outright:</p>
+      <ul className="rules-list">
+        <li>Essential Construction Rules (p. 5-2): wave 2 never retraces all of wave 1; wave 3 is longer than wave 2; wave 4 never retraces all of wave 3; wave 5 is at least 38.2% of wave 4; wave 3 is never the shortest.</li>
+        <li>Similarity &amp; Balance (p. 4-3): neighbouring waves must relate by at least a third in price or time, or they are not the same degree.</li>
+        <li>Rule of Alternation (p. 5-5): waves 2 and 4 must differ in price, time or severity.</li>
+        <li>Extension Rule (p. 5-4): in a finished impulse one wave is at least 161.8% of the next longest.</li>
+        <li>Overlap Rule (p. 5-8): in a trending impulse wave 4 stays out of wave 2's zone; overlap means a terminal impulse.</li>
+        <li>Channeling (p. 5-9 to 5-10): a break of the 0-2 line inside wave 2's zone means wave 2 isn't over; a break of the 2-4 line before a new high means wave 4 isn't over.</li>
+        <li>Zigzags and flats (p. 5-17 to 5-21): a zigzag's wave a retraces at most 61.8% of the prior impulse, b at most 61.8% of a, and c goes beyond a; a flat's b retraces at least 61.8% of a and c is at least 38.2% of a. Flats are named by b's strength (61.8–80%, 81–100%, over 100%).</li>
+        <li>Post-pattern confirmation (p. 6-1 to 6-3): an impulse is confirmed when the 2-4 line breaks in no more time than wave 5 took; a zigzag or flat when the 0-B line breaks in no more time than wave c took.</li>
+        <li>Targets follow the Rule of Equality and Neely's Fibonacci notes (p. 5-8, 5-11, 5-12) and the Stage 2 retracement requirements (p. 6-2).</li>
+      </ul>
+      <h3>Where Viko simplifies the book</h3>
+      <p>Neely builds counts from monowaves plotted on cash data, then compacts them into larger patterns with Structure labels (chapters 3, 7 and 8). Viko finds monowaves with a volatility-scaled swing filter at three sizes and tests standard patterns only. It doesn't yet count complex corrections (double and triple threes), triangles or the advanced logic of chapters 9 to 12. When a market is in one of those, Viko says "no trade" rather than guess.</p>
+      <h3>Wyckoff</h3>
+      <p>Wyckoff rules (phases A–E, climaxes, springs and upthrusts, tests, effort and result, significant bars, entries and stops) come from Rubén Villahermosa, <i>The Wyckoff Methodology in Depth</i>, and cite the chapter on each line of the checklist.</p>
       <h3>Supplementary indicators</h3>
       <p>EMA 20/50/200, RSI, MACD, Bollinger Bands and ATR are displayed for reference. They don't affect the verdict, because they come from neither book.</p>
     </section>

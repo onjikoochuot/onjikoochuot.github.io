@@ -55,14 +55,14 @@ export function VerdictPanel({ symbol, tfLabel, analysis, setup, onPick, account
       <p className={`v-word v-${setup.verdict === "APPROVED" ? "ok" : setup.verdict === "WATCH" ? "watch" : "no"}`}>{VERDICT_WORD[setup.verdict](setup)}</p>
       <p className="v-setup">{setup.name}: {setup.pattern.toLowerCase()}, {setup.degree.toLowerCase()}.</p>
       <p className="v-plain">{setup.plain}</p>
-      <dl className="levels">
+      {setup.hardFail ? <p className="why-hidden">Levels are hidden because this wave count breaks a must-pass rule. Numbers from a broken count would mislead you.</p> : <dl className="levels">
         <div><dt>{setup.triggered ? "Entry" : "Trigger"}</dt><dd className="mono">{fmt(setup.entry)}</dd></div>
         <div><dt>Stop</dt><dd className="mono bear">{fmt(setup.stop)}</dd></div>
         <div><dt>Target 1</dt><dd className="mono bull">{fmt(setup.target1)} <i>{setup.rr1.toFixed(1)}R</i></dd></div>
         <div><dt>Target 2</dt><dd className="mono bull">{fmt(setup.target2)} <i>{setup.rr2.toFixed(1)}R</i></dd></div>
         <div><dt>Count invalid at</dt><dd className="mono">{fmt(setup.invalidation)}</dd></div>
         <div><dt>Size at {riskPct}% risk</dt><dd className="mono">{units >= 100 ? units.toFixed(0) : units.toPrecision(3)} units</dd></div>
-      </dl>
+      </dl>}
       {setup.reasons.length > 0 && setup.verdict !== "APPROVED" && (
         <ul className="why">{setup.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
       )}

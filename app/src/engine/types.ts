@@ -40,6 +40,8 @@ export type Setup = {
   verdict: "APPROVED" | "WATCH" | "NO TRADE";
   reasons: string[];
   plain: string; // plain-English instruction
+  tip: string; // layman tip
+  expectBars: number; // rough bars to target 1, from wave timing
 };
 
 export type WyckoffEvent = { i: number; p: number; code: string; name: string };
