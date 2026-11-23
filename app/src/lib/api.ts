@@ -128,7 +128,7 @@ const newsCache = new Map<string, { at: number; data: NewsBrief }>();
 export async function getNews(inst: Instrument, tf: string, technical: { verdict: string; dir: string; score: number; setup: string; price: number } | null): Promise<NewsBrief> {
   const key = `${inst.id}|${tf}|${technical?.verdict}|${technical?.dir}|${technical?.setup}`;
   const hit = newsCache.get(key);
-  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.data;
+  if (hit && Date.now() - hit.at < 9 * 60_000) return hit.data;
   const r = await fetch(NEWS, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol: inst.id, name: inst.name, market: inst.market, tf, technical }) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.headlines) throw new Error(j.error ?? "News is unavailable right now.");
@@ -165,4 +165,28 @@ export const binance = {
   order: (key: string, region: string, b: Record<string, unknown>): Promise<BnOrderResult> => bfetch(key, region, "order", b),
   close: (key: string, region: string, mode: BnMode, symbol: string) => bfetch(key, region, "close", { mode, symbol }),
   history: (key: string, region: string): Promise<{ rows: BnHistory[] }> => bfetch(key, region, "history"),
+};
+
+// ---------- Auto-trader (Binance or Deriv, managed on the server) ----------
+export const AUTO = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-auto";
+export type AutoCfg = { broker: "binance" | "deriv"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" };
+export type AutoPreviewTrade = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; agree: number; against: number; opinion: string; stance: string; setup: string; entry: number; stop: number; target1: number; target2: number; money: number; leverage: number; loss: number; profit1: number; profit2: number; hours: [number, number] };
+export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; money: number; horizon: string };
+export type AutoPlan = { id: string; created_at: string; broker: string; mode: string; amount: number; count: number; horizon: string; strict: number; risk: string; status: string; ends_at: string; enter_until: string; closed_at: string | null };
+export type AutoPosition = { id: string; plan_id: string; broker: string; mode: string; symbol: string; label: string; tf: string; dir: string; setup: string; score: number; opinion: string | null; stake: number; leverage: number; entry: number; stop: number; initial_stop: number; target1: number; target2: number; t1_hit: boolean; status: string; opened_at: string; closed_at: string | null; pnl: number | null; close_reason: string | null; last_price: number | null; last_pnl: number | null };
+export type AutoEvent = { id: number; at: string; plan_id: string | null; message: string };
+export type AutoHistory = { id: string; plan_id: string; broker: string; mode: string; symbol: string; label: string; tf: string; dir: string; stake: number; leverage: number; entry: number; pnl: number; close_reason: string; opened_at: string; closed_at: string; score: number };
+async function afetch(key: string, route: string, body?: unknown, query = "") {
+  const r = await fetch(`${AUTO}/${route}?forceFunctionRegion=ap-south-1${query}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", "x-viko-key": key }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `Auto-trader request failed (${r.status}).`);
+  return j;
+}
+export const auto = {
+  preview: (key: string, c: AutoCfg): Promise<AutoPreview> => afetch(key, "preview", c),
+  start: (key: string, c: AutoCfg): Promise<{ ok: true; plan_id: string; placed: number; skipped: string[] }> => afetch(key, "start", c),
+  state: (key: string, refresh = false): Promise<{ plans: AutoPlan[]; positions: AutoPosition[]; events: AutoEvent[]; now: number }> => afetch(key, "state", undefined, refresh ? "&refresh=1" : ""),
+  close: (key: string, b: { plan_id?: string; position_id?: string }) => afetch(key, "close", b),
+  history: (key: string): Promise<{ rows: AutoHistory[] }> => afetch(key, "history"),
+  connect: (key: string, broker: string, mode: string): Promise<{ ok: true; balance: number; currency: string; account?: string }> => afetch(key, "connect", undefined, `&broker=${broker}&mode=${mode}`),
 };
