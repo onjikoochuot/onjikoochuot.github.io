@@ -13,3 +13,6 @@ cp /tmp/engine-entry.ts ./engine-entry.ts
 app/node_modules/.bin/esbuild engine-entry.ts --bundle --format=esm --platform=neutral --target=es2022 --minify --outfile=supabase/functions/viko-paper/engine.js --log-level=warning
 rm engine-entry.ts
 echo "functions built"
+# viko-auto ships as compiled JS loaded from a pinned commit (supabase/functions/viko-auto/index.ts is the source).
+app/node_modules/.bin/esbuild supabase/functions/viko-auto/index.ts --format=esm --platform=neutral --target=es2022 --outfile=supabase/functions/viko-auto/main.js --log-level=warning
+sed -i '1{/edge-runtime.d.ts/d}' supabase/functions/viko-auto/main.js
