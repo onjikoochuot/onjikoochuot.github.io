@@ -18,6 +18,35 @@ const CORS = {
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 type DB = ReturnType<typeof createClient>;
 const MAX_OPEN = 8;
+const TF_HOURS: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168 };
+const ALL_TFS = Object.keys(TF_HOURS);
+
+// Economic calendar (ForexFactory weekly feed), used to keep the autopilot out of trades right before big news.
+type CalEvent = { title: string; currency: string; impact: string; at: number };
+let calCache: { at: number; events: CalEvent[] } | null = null;
+async function calendar(): Promise<CalEvent[]> {
+  if (calCache && Date.now() - calCache.at < 30 * 60 * 1000) return calCache.events;
+  const all: CalEvent[] = [];
+  for (const f of ["ff_calendar_thisweek.json", "ff_calendar_nextweek.json"]) {
+    try {
+      const r = await fetch(`https://nfs.faireconomy.media/${f}`);
+      if (!r.ok) continue;
+      for (const e of await r.json()) all.push({ title: String(e.title), currency: String(e.country), impact: String(e.impact), at: Date.parse(e.date) });
+    } catch { /* calendar optional */ }
+  }
+  calCache = { at: Date.now(), events: all };
+  return all;
+}
+function currenciesFor(symbol: string): string[] {
+  const s = symbol.split(":")[1] ?? "";
+  if (s.endsWith("=X")) { const p = s.replace("=X", ""); return [p.slice(0, 3), p.slice(3, 6)]; }
+  if (s === "^FTSE") return ["GBP"];
+  if (s === "^GDAXI") return ["EUR"];
+  if (s === "^N225") return ["JPY"];
+  if (s === "^HSI") return ["CNY", "USD"];
+  return ["USD"];
+}
+const inTime = (ms: number) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
 
 async function authed(req: Request, db: DB) {
   const given = req.headers.get("x-viko-key");
@@ -101,6 +130,8 @@ async function autopilot(db: DB, acc: any) {
   let slots = MAX_OPEN - busy.size;
   const opened: string[] = [];
   const watch: { id: string; label: string }[] = acc.watchlist ?? [];
+  const cal = await calendar();
+  const skipped = new Set<string>();
   for (const tf of (acc.auto_tfs ?? ["4h", "1d"]) as Tf[]) {
     for (const w of watch) {
       if (slots <= 0) return opened;
@@ -113,6 +144,15 @@ async function autopilot(db: DB, acc: any) {
         const s = a.setups.find((x: any) => x.verdict === "APPROVED")
           ?? (acc.auto_level === "practice" ? a.setups.find((x: any) => x.verdict === "WATCH" && !x.hardFail && x.triggered && x.rr1 >= 2 && x.score >= 65) : undefined);
         if (!s) continue;
+        // Stand aside when a high-impact release for this market's currency lands within 2 hours (or 2 candles, if longer).
+        const windowMs = Math.max(2, 2 * (TF_HOURS[tf] ?? 1)) * 3600000;
+        const cur = currenciesFor(w.id);
+        const now = Date.now();
+        const big = cal.find((e) => e.impact === "High" && cur.includes(e.currency) && e.at > now && e.at - now <= windowMs);
+        if (big) {
+          if (!skipped.has(w.id)) { skipped.add(w.id); await log(db, null, "skip", `Skipped ${w.label} (${tf}): ${big.title} (${big.currency}) is due in ${inTime(big.at - now)}. Waiting until it's out.`); }
+          continue;
+        }
         const tip = makeTip(s, w.label, tf, Math.floor(Date.now() / 1000), Number(acc.balance), Number(acc.risk_pct));
         await openTrade(db, acc, { symbol: w.id, label: w.label, tf, dir: s.dir, stop: s.stop, target1: s.target1, target2: s.target2, setup: `${s.name} (${s.degree})${s.verdict === "APPROVED" ? "" : `, practice at ${s.score}%`}`, score: s.score, tip: [tip.headline, ...tip.steps].join("\n"), source: "auto" }, c[c.length - 1].c);
         busy.add(w.id); slots--; opened.push(`${w.label} ${tf}`);
@@ -162,7 +202,7 @@ Deno.serve(async (req) => {
       if (typeof b.autopilot === "boolean") patch.autopilot = b.autopilot;
       if (b.auto_level === "approved" || b.auto_level === "practice") patch.auto_level = b.auto_level;
       if (b.risk_pct !== undefined) patch.risk_pct = Math.min(5, Math.max(0.1, Number(b.risk_pct)));
-      if (Array.isArray(b.auto_tfs)) patch.auto_tfs = b.auto_tfs.filter((x: string) => ["1h", "4h", "1d", "1w"].includes(x));
+      if (Array.isArray(b.auto_tfs)) patch.auto_tfs = b.auto_tfs.filter((x: string) => ALL_TFS.includes(x));
       if (Array.isArray(b.watchlist)) patch.watchlist = b.watchlist.slice(0, 60).map((w: any) => ({ id: String(w.id).slice(0, 40), label: String(w.label).slice(0, 40) }));
       if (b.reset) {
         const sb = Math.max(100, Number(b.reset.starting_balance ?? 10000));

@@ -3,12 +3,14 @@ import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, Crossha
 import type { Analysis, Candle, Setup } from "../engine/types";
 import { fmt } from "../engine/analyze";
 
-const C = { abyss: "#0E1A21", rule: "#223843", foam: "#DDE7E4", mist: "#7F989A", brass: "#C9A45C", kelp: "#5FB389", anemone: "#D95F6E", tide: "#6E9FB8" };
+const DARK = { abyss: "#0E1A21", rule: "#223843", foam: "#DDE7E4", mist: "#7F989A", brass: "#C9A45C", kelp: "#5FB389", anemone: "#D95F6E", tide: "#6E9FB8", grid: "rgba(39,64,77,.35)", label: "#27404D", volUp: "rgba(95,179,137,.28)", volDn: "rgba(217,95,110,.28)" };
+const LIGHT = { abyss: "#FFFFFF", rule: "#D0DBDA", foam: "#13232B", mist: "#4D686B", brass: "#9A7424", kelp: "#23794F", anemone: "#B3364A", tide: "#2E6C88", grid: "rgba(19,35,43,.06)", label: "#4D686B", volUp: "rgba(35,121,79,.22)", volDn: "rgba(179,54,74,.22)" };
 export type Indicators = { ema: boolean; bb: boolean; rsi: boolean };
 
-type Props = { candles: Candle[]; analysis: Analysis | null; setup: Setup | null; ind: Indicators };
+type Props = { candles: Candle[]; analysis: Analysis | null; setup: Setup | null; ind: Indicators; theme: "light" | "dark" };
 
-export default function Chart({ candles, analysis, setup, ind }: Props) {
+export default function Chart({ candles, analysis, setup, ind, theme }: Props) {
+  const C = theme === "light" ? LIGHT : DARK;
   const el = useRef<HTMLDivElement>(null);
   const legend = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -42,6 +44,15 @@ export default function Chart({ candles, analysis, setup, ind }: Props) {
     return () => { chart.unsubscribeCrosshairMove(onMove); chart.remove(); chartRef.current = null; };
   }, []);
 
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: C.abyss }, textColor: C.mist, panes: { separatorColor: C.rule } },
+      grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
+      rightPriceScale: { borderColor: C.rule }, timeScale: { borderColor: C.rule },
+      crosshair: { vertLine: { color: C.mist, labelBackgroundColor: C.label }, horzLine: { color: C.mist, labelBackgroundColor: C.label } },
+    });
+  }, [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Keep the readout on the latest bar while live ticks arrive.
   useEffect(() => { showBar(candles[candles.length - 1], candles[candles.length - 2]); }, [candles]);
 
@@ -52,7 +63,7 @@ export default function Chart({ candles, analysis, setup, ind }: Props) {
     const added: ReturnType<IChartApi["addSeries"]>[] = [];
     const vol = chart.addSeries(HistogramSeries, { priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
     vol.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
-    vol.setData(candles.map((k) => ({ time: k.t as UTCTimestamp, value: k.v, color: k.c >= k.o ? "rgba(95,179,137,.28)" : "rgba(217,95,110,.28)" })));
+    vol.setData(candles.map((k) => ({ time: k.t as UTCTimestamp, value: k.v, color: k.c >= k.o ? C.volUp : C.volDn })));
     added.push(vol);
     const cs = chart.addSeries(CandlestickSeries, { upColor: C.kelp, downColor: C.anemone, borderVisible: false, wickUpColor: C.kelp, wickDownColor: C.anemone, priceLineColor: C.mist });
     cs.setData(candles.map((k) => ({ time: k.t as UTCTimestamp, open: k.o, high: k.h, low: k.l, close: k.c })));
@@ -112,7 +123,7 @@ export default function Chart({ candles, analysis, setup, ind }: Props) {
       for (const s of added) { try { chart.removeSeries(s); } catch { /* gone */ } }
       try { if (chart.panes().length > 1) chart.removePane(1); } catch { /* none */ }
     };
-  }, [candles, analysis, setup, ind]);
+  }, [candles, analysis, setup, ind, theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Frame the latest ~260 bars only when the market or timeframe changes, not on every live tick.
   const first = candles[0]?.t;

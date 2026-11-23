@@ -53,6 +53,36 @@ export default function App() {
   const [jkey, setJkey] = useState<string>(() => store("jkey", ""));
   const [saving, setSaving] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => (document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"));
+  const applyTheme = (t: "light" | "dark", saveIt: boolean) => {
+    document.documentElement.setAttribute("data-theme", t);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t === "dark" ? "#0E1A21" : "#EBF0EF");
+    if (saveIt) { try { localStorage.setItem("viko-theme", t); } catch { /* private mode */ } }
+    setTheme(t);
+  };
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    root.classList.add("theme-anim");
+    applyTheme(theme === "dark" ? "light" : "dark", true);
+    setTimeout(() => root.classList.remove("theme-anim"), 350);
+  };
+  // Install as an app: Android/desktop Chrome hand us a prompt; iPhone needs Safari's Share menu.
+  const [installEvt, setInstallEvt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
+  const [installed, setInstalled] = useState(() => matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true);
+  useEffect(() => {
+    const f = (e: Event) => { e.preventDefault(); setInstallEvt(e as Event & { prompt: () => Promise<void> }); };
+    const g = () => { setInstalled(true); setInstallEvt(null); };
+    addEventListener("beforeinstallprompt", f); addEventListener("appinstalled", g);
+    return () => { removeEventListener("beforeinstallprompt", f); removeEventListener("appinstalled", g); };
+  }, []);
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  // Follow the device setting until a choice is saved.
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: light)");
+    const f = (e: MediaQueryListEvent) => { try { if (!localStorage.getItem("viko-theme")) applyTheme(e.matches ? "light" : "dark", false); } catch { /* ignore */ } };
+    mq.addEventListener("change", f);
+    return () => mq.removeEventListener("change", f);
+  }, []);
 
   useEffect(() => { const f = () => setView(viewFromHash()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []);
   useEffect(() => save("watchlist2", list), [list]);
@@ -151,7 +181,10 @@ export default function App() {
         <nav className="tabs" aria-label="Sections">
           {VIEWS.map((v) => <a key={v} href={`#${v}`} className={view === v ? "on" : ""} aria-current={view === v ? "page" : undefined} onClick={() => go(v)}>{VIEW_LABEL[v]}</a>)}
         </nav>
-        <button className="btn ghost" onClick={() => setSettingsOpen(true)}>Settings</button>
+        <div className="top-actions">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          <button className="btn ghost" onClick={() => setSettingsOpen(true)}>Settings</button>
+        </div>
       </header>
 
       <div className="body">
@@ -202,7 +235,7 @@ export default function App() {
               <div className="analyse">
                 <div className="chart-wrap">
                   <div className="tip-mobile">{tipEl}</div>
-                  {candles.length > 0 ? <Chart candles={candles} analysis={analysis} setup={setup} ind={ind} /> : <div className="chart placeholder">{loading ? "Fetching candles…" : "No data"}</div>}
+                  {candles.length > 0 ? <Chart candles={candles} analysis={analysis} setup={setup} ind={ind} theme={theme} /> : <div className="chart placeholder">{loading ? "Fetching candles…" : "No data"}</div>}
                   <p className="legend"><span className="lg-wave">Wave count</span><span className="lg-wy">Wyckoff events</span><span className="lg-lv">Entry, stop and targets</span></p>
                 </div>
                 <div className="side">
@@ -253,6 +286,11 @@ export default function App() {
             <label>App key<input type="password" value={jkey} onChange={(e) => setJkey(e.target.value.trim())} autoComplete="off" /><small>Unlocks paper trading and your journal. Stored only in this browser.</small></label>
             <label>Account size for position sizing<input type="number" min={0} value={account} onChange={(e) => setAccount(Number(e.target.value))} /></label>
             <label>Risk per trade, %<input type="number" min={0.1} max={5} step={0.1} value={riskPct} onChange={(e) => setRiskPct(Number(e.target.value))} /><small>Villahermosa recommends no more than 1% (ch. 27).</small></label>
+            <h3>Install on this device</h3>
+            {installed ? <p className="ctx-note">Viko is installed. Open it from your home screen.</p>
+              : installEvt ? <button className="btn primary" onClick={() => installEvt.prompt().catch(() => {})}>Install Viko</button>
+              : isIOS ? <ol className="install-steps"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (the square with an arrow).</li><li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>
+              : <ol className="install-steps"><li>Open this page in <b>Chrome</b>.</li><li>Tap the <b>⋮</b> menu at the top right.</li><li>Choose <b>Install app</b> or <b>Add to Home screen</b>.</li></ol>}
             <h3>Watchlist ({list.length})</h3>
             <ul className="wl-edit">{list.map((i) => <li key={i.id}><span>{i.label}</span><button className="link" onClick={() => setList(list.filter((x) => x.id !== i.id))}>Remove</button></li>)}</ul>
             <div className="row"><button className="link" onClick={() => setList(DEFAULT_WATCHLIST)}>Reset watchlist</button><button className="btn primary" onClick={() => setSettingsOpen(false)} autoFocus>Done</button></div>
@@ -298,4 +336,14 @@ function Countdown({ tf, crypto }: { tf: Tf; crypto: boolean }) {
   const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), s = left % 60;
   const txt = tf === "1w" ? `${Math.floor(left / 86400)}d ${Math.floor((left % 86400) / 3600)}h` : h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
   return <span className="countdown">candle closes in <span className="mono">{txt}</span></span>;
+}
+
+function ThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
+  const dark = theme === "dark";
+  return (
+    <button type="button" className="theme-toggle" onClick={onToggle} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={dark}>
+      <svg className="ti-moon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21 14.2A8.5 8.5 0 0 1 9.8 3a.6.6 0 0 0-.8-.7A10 10 0 1 0 21.7 15a.6.6 0 0 0-.7-.8z" /></svg>
+      <svg className="ti-sun" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="currentColor" /><g stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 1.8v2.4M12 19.8v2.4M1.8 12h2.4M19.8 12h2.4M4.8 4.8l1.7 1.7M17.5 17.5l1.7 1.7M4.8 19.2l1.7-1.7M17.5 6.5l1.7-1.7" /></g></svg>
+    </button>
+  );
 }

@@ -11,6 +11,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Viko" />
     <meta name="theme-color" content="#0E1A21" />
+    <script>
+      // Light/dark theme: the saved choice, otherwise the device setting. Runs before paint (same key as the other Viko sites).
+      (function () { try { var t = localStorage.getItem("viko-theme"); if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", t); document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#0E1A21" : "#EBF0EF"; } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); } })();
+    </script>
     <meta name="description" content="Viko: Elliott Wave (Neely) and Wyckoff trade analysis with an 80% rule-confluence gate." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

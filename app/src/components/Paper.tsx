@@ -4,7 +4,7 @@ import { paper, type PaperState, type PaperTrade } from "../lib/api";
 import { useQuotes } from "../lib/live";
 
 const money = (x: number) => `${x < -0.004 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const TFS = ["1h", "4h", "1d", "1w"];
+const TFS = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
 
 function unrealized(t: PaperTrade, price: number) {
   return (t.dir === "long" ? price - t.entry : t.entry - price) * t.qty_open;
@@ -80,7 +80,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
         <div className="ap-row">
           <div>
             <h3>Autopilot</h3>
-            <p className="ctx-note">Every 15 minutes Viko scans your {acc.watchlist.length} watchlist markets and opens a paper trade {acc.auto_level === "practice" ? "for approved setups and for clean practice setups (65% or more of the rules, trigger fired, reward at least 2× the risk)" : "only when a setup is approved (80% or more)"}. It runs on the server, so your phone can be off.{acc.last_scan ? ` Last scan ${new Date(acc.last_scan).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""}</p>
+            <p className="ctx-note">Every 15 minutes Viko scans your {acc.watchlist.length} watchlist markets and opens a paper trade {acc.auto_level === "practice" ? "for approved setups and for clean practice setups (65% or more of the rules, trigger fired, reward at least 2× the risk)" : "only when a setup is approved (80% or more)"}. It stays out of trades when big news (like US inflation or a rate decision) is due within 2 hours. It runs on the server, so your phone can be off.{acc.last_scan ? ` Last scan ${new Date(acc.last_scan).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""}</p>
           </div>
           <button role="switch" aria-checked={acc.autopilot} className={`switch ${acc.autopilot ? "on" : ""}`} onClick={() => set({ autopilot: !acc.autopilot }, "ap")} disabled={busy === "ap"}><span /></button>
         </div>
