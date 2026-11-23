@@ -180,6 +180,14 @@ function TfDots({ by, focus }: { by: Partial<Record<Tf, PickRow>>; focus?: Tf })
   );
 }
 
+function agreeText(agree: number, against: number) {
+  const n = (k: number, one: string, many: string) => `${k} other timeframe${k === 1 ? "" : "s"} ${k === 1 ? one : many}`;
+  const opp = `${against} point${against === 1 ? "s" : ""} the other way`;
+  if (against) return agree ? `${n(agree, "agrees", "agree")}, but ${opp}. Use a smaller size, or wait.` : `No other timeframe agrees, and ${opp}. Treat this one with care.`;
+  if (agree >= 3) return `${n(agree, "agrees", "agree")} and none disagree. This is as aligned as it gets.`;
+  return agree ? `${n(agree, "agrees", "agree")} and none disagree.` : "No other timeframe confirms it yet.";
+}
+
 function Combined({ fresh, onOpen }: { fresh: PickRow[]; onOpen: (id: string, tf: Tf) => void }) {
   const groups = useMemo(() => {
     const m = new Map<string, Partial<Record<Tf, PickRow>>>();
@@ -214,7 +222,7 @@ function Combined({ fresh, onOpen }: { fresh: PickRow[]; onOpen: (id: string, tf
             <PickHead r={r} />
             <TfDots by={by} focus={r.tf} />
             <p className={`pick-agree ${against ? "warn" : ""}`}>
-              {against ? `${agree} other timeframe${agree === 1 ? "" : "s"} agree, but ${against} point${against === 1 ? "s" : ""} the other way. Use a smaller size.` : agree >= 3 ? `${agree} other timeframes agree. This is as aligned as it gets.` : agree > 0 ? `${agree} other timeframe${agree === 1 ? "" : "s"} agree${agree === 1 ? "s" : ""}, none disagree.` : "No other timeframe confirms it yet."}
+              {agreeText(agree, against)}
             </p>
             <Levels r={r} />
             <NewsWarn r={r} />
@@ -275,7 +283,7 @@ function DayPlan({ fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow
     const broken = live !== undefined && gain(s.dir, s.entry, live) <= gain(s.dir, s.entry, s.stop);
     const from = new Date(now + est(r) * 0.6 * 3600000), to = new Date(Math.min(end.getTime(), now + est(r) * 1.6 * 3600000));
     const t = (d: Date) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-    return { s, loss, p1, p2, live, moved, broken, window: `${t(from)} to ${t(to)}` };
+    return { s, loss, p1, p2, live, moved, broken, window: `${t(from)} and ${t(to)}` };
   };
   const plans = chosen.map((r) => ({ r, ...plan(r, per) }));
   const best = plans.reduce((a, p) => a + p.p2, 0), first = plans.reduce((a, p) => a + p.p1, 0), worst = plans.reduce((a, p) => a + p.loss, 0);
@@ -316,8 +324,8 @@ function DayPlan({ fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow
                 <ol className="tip-steps">
                   <li>{s.dir === "long" ? "Buy" : "Sell short"} <b>{r.label}</b> with <b>{money(per)}</b> at about <b className="mono">{fmt(s.entry)}</b>{live !== undefined ? <> (live now: <span className="mono">{fmt(live)}</span>)</> : null}.</li>
                   <li>Set the stop-loss at <b className="mono">{fmt(s.stop)}</b>. If it's hit you lose about <b className="neg">{money(loss)}</b>.</li>
-                  <li>Sell half at <b className="mono">{fmt(s.target1)}</b> (about <b className="pos-c">+{money(p1 / 2)}</b>), then move the stop to your entry price.</li>
-                  <li>Sell the rest at <b className="mono">{fmt(s.target2)}</b>. Both targets together: about <b className="pos-c">+{money(p2)}</b>.</li>
+                  <li>{s.dir === "long" ? "Sell" : "Buy back"} half at <b className="mono">{fmt(s.target1)}</b> (about <b className="pos-c">+{money(p1 / 2)}</b>), then move the stop to your entry price.</li>
+                  <li>{s.dir === "long" ? "Sell" : "Buy back"} the rest at <b className="mono">{fmt(s.target2)}</b>. Both targets together: about <b className="pos-c">+{money(p2)}</b>.</li>
                   <li>Expect target 1 roughly between {window}. Close whatever is still open before you sleep.</li>
                 </ol>
                 {broken && <p className="pick-warn">The price has already passed the stop-loss since the scan. Skip this one.</p>}
