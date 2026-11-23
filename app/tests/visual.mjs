@@ -27,6 +27,13 @@ for (const [w,h,name] of [[1440,1000,"desktop"],[390,844,"mobile"]]) {
     const u = new URL(route.request().url());
     const json = (body) => route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) });
     if (u.pathname.endsWith("/quotes")) { const q = {}; for (const s of (u.searchParams.get("symbols")||"").split(",")) q[s] = { price: s.includes("BTC") ? 61308.09 : 100 + s.length * 3.7, change: (s.length % 5) - 2.2 }; return json({ quotes: q }); }
+    if (u.pathname.includes("viko-news")) return json({ headlines: [
+      { title: "Bitcoin climbs as ETF inflows return for a third day", source: "Reuters", url: "https://example.com/1", at: Date.now() - 3600e3, score: 1 },
+      { title: "Crypto lender warns of liquidations if prices slide", source: "CoinDesk", url: "https://example.com/2", at: Date.now() - 5 * 3600e3, score: -1 },
+      { title: "Analysts split on year-end targets", source: "Bloomberg", url: "https://example.com/3", at: Date.now() - 20 * 3600e3, score: 0 }],
+      mood: 0.2, moodLabel: "positive", currencies: ["USD"],
+      events: [{ title: "CPI m/m", currency: "USD", impact: "High", at: Date.now() + 2.5 * 3600e3, forecast: "0.3%", previous: "0.4%" }, { title: "Flash Manufacturing PMI", currency: "USD", impact: "Medium", at: Date.now() + 26 * 3600e3, forecast: "54.5", previous: "56.0" }],
+      opinion: { by: "ai", stance: "bullish", text: "Headlines lean positive, with steady ETF inflows. US inflation data lands in about two and a half hours and could swing prices sharply either way. The chart has no clean setup yet, so a careful trader waits for the release before acting." }, at: Date.now() });
     if (u.pathname.includes("viko-paper")) return json(u.pathname.endsWith("state") ? paperState : { ok: true });
     if (u.pathname.endsWith("search")) return json({ quotes: [] });
     const sym = u.searchParams.get("symbol") || ""; const seed = [...sym].reduce((a, c) => a + c.charCodeAt(0), 3);
@@ -37,6 +44,6 @@ for (const [w,h,name] of [[1440,1000,"desktop"],[390,844,"mobile"]]) {
     await pg.goto(`http://localhost:4321/#${v}`); await pg.waitForTimeout(2200);
     await pg.screenshot({ path: `/home/claude/shots/v2-${name}-${v}.png`, fullPage: false });
   }
-  if (name === "mobile") { await pg.goto("http://localhost:4321/#analyse"); await pg.waitForTimeout(1800); await pg.mouse.wheel(0, 700); await pg.waitForTimeout(400); await pg.screenshot({ path: `/home/claude/shots/v2-mobile-analyse-2.png` }); }
+  if (name === "mobile") { await pg.goto("http://localhost:4321/#analyse"); await pg.waitForTimeout(2500); await pg.evaluate(() => document.querySelector(".news")?.scrollIntoView()); await pg.waitForTimeout(400); await pg.screenshot({ path: `/home/claude/shots/v2-mobile-news.png` }); await pg.click(".trade-btns .buy-btn"); await pg.waitForTimeout(500); await pg.screenshot({ path: `/home/claude/shots/v2-mobile-ticket.png` }); }
 }
 await b.close(); srv.close(); console.log("done");

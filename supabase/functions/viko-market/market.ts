@@ -1,6 +1,6 @@
 // Shared market-data helpers (Binance + Yahoo). Copied into each function at deploy time.
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
-export const TF = ["1h", "4h", "1d", "1w"] as const;
+export const TF = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"] as const;
 export type Tf = typeof TF[number];
 export const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 
@@ -19,8 +19,13 @@ export async function binance(sym: string, tf: Tf): Promise<Candle[]> {
 }
 
 export async function yahoo(sym: string, tf: Tf): Promise<Candle[]> {
-  const cfg = { "1h": ["60m", "730d"], "4h": ["60m", "730d"], "1d": ["1d", "10y"], "1w": ["1wk", "max"] }[tf];
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${cfg[0]}&range=${cfg[1]}&includePrePost=false`;
+  // Yahoo intraday limits: 5-30m bars go back 60 days, hourly 730 days. 2h and 4h are built from hourly bars.
+  const cfg: Record<Tf, [string, string, number]> = {
+    "5m": ["5m", "60d", 0], "15m": ["15m", "60d", 0], "30m": ["30m", "60d", 0], "1h": ["60m", "730d", 0],
+    "2h": ["60m", "730d", 7200], "4h": ["60m", "730d", 14400], "1d": ["1d", "10y", 0], "1w": ["1wk", "max", 0],
+  };
+  const [iv, range, bucketSec] = cfg[tf];
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${iv}&range=${range}&includePrePost=false`;
   let r = await fetch(url, { headers: UA });
   if (!r.ok) r = await fetch(url.replace("query1", "query2"), { headers: UA });
   if (!r.ok) throw new Error(`yahoo ${r.status}`);
@@ -35,10 +40,10 @@ export async function yahoo(sym: string, tf: Tf): Promise<Candle[]> {
     if ([o, h, l, c].some((x) => x == null || Number.isNaN(x))) continue;
     out.push({ t: ts[i], o, h, l, c, v: q.volume?.[i] ?? 0 });
   }
-  if (tf === "4h") {
+  if (bucketSec) {
     const agg: Candle[] = [];
     for (const k of out) {
-      const bucket = Math.floor(k.t / 14400) * 14400;
+      const bucket = Math.floor(k.t / bucketSec) * bucketSec;
       const last = agg[agg.length - 1];
       if (last && last.t === bucket) { last.h = Math.max(last.h, k.h); last.l = Math.min(last.l, k.l); last.c = k.c; last.v += k.v; }
       else agg.push({ ...k, t: bucket });
@@ -47,7 +52,6 @@ export async function yahoo(sym: string, tf: Tf): Promise<Candle[]> {
   }
   return out.slice(-1000);
 }
-
 
 export async function candles(symbol: string, tf: Tf): Promise<Candle[]> {
   const m = symbol.match(/^(crypto|yahoo):([A-Za-z0-9.=^\-]{1,24})$/);

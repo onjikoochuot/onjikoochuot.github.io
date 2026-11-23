@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Analysis, Candle, Tf } from "./engine/types";
 import { analyze, fmt } from "./engine/analyze";
-import { makeTip } from "./engine/layman";
-import { CATALOG, DEFAULT_WATCHLIST, getCandles, HTF, journal, MARKETS, paper, save, searchSymbols, store, type Instrument } from "./lib/api";
+import { makeTip, TF_HOURS } from "./engine/layman";
+import { CATALOG, DEFAULT_WATCHLIST, getCandles, getNews, HTF, journal, MARKETS, paper, save, searchSymbols, store, type Instrument, type NewsBrief } from "./lib/api";
 import { useLiveCandles, useQuotes } from "./lib/live";
-import Chart from "./components/Chart";
+import Chart, { type Indicators } from "./components/Chart";
+import NewsPanel from "./components/NewsPanel";
+import OrderTicket from "./components/OrderTicket";
 import { ContextCards, Ledger, VerdictPanel } from "./components/Panels";
 import { Backtest, Journal, Rulebook, Scanner } from "./components/Views";
 import TipCard from "./components/TipCard";
 import Paper from "./components/Paper";
 import Markets from "./components/Markets";
 
-const TFS: Tf[] = ["1h", "4h", "1d", "1w"];
-const TF_LABEL: Record<Tf, string> = { "1h": "1 hour", "4h": "4 hours", "1d": "Daily", "1w": "Weekly" };
+const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
+const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly" };
 const VIEWS = ["analyse", "markets", "paper", "scan", "backtest", "journal", "rules"] as const;
 type View = typeof VIEWS[number];
 const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
@@ -39,7 +41,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
-  const [showEma, setShowEma] = useState(true);
+  const [ind, setInd] = useState<Indicators>(() => store("ind", { ema: true, bb: false, rsi: false }));
+  const [news, setNews] = useState<NewsBrief | null>(null);
+  const [newsErr, setNewsErr] = useState("");
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [ticket, setTicket] = useState<"long" | "short" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [account, setAccount] = useState<number>(() => store("account", 10000));
@@ -50,6 +56,7 @@ export default function App() {
 
   useEffect(() => { const f = () => setView(viewFromHash()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []);
   useEffect(() => save("watchlist2", list), [list]);
+  useEffect(() => save("ind", ind), [ind]);
   useEffect(() => { save("inst", inst); save("tf", tf); }, [inst, tf]);
   useEffect(() => { save("account", account); save("risk", riskPct); save("jkey", jkey); }, [account, riskPct, jkey]);
   // Keep the server-side autopilot scanning the same watchlist you see.
@@ -81,7 +88,19 @@ export default function App() {
   useEffect(() => { if (candles.length && candles !== base && Date.now() - lastRun.current > 10_000) rerun(); }, [candles, base, rerun]);
 
   const setup = useMemo(() => (analysis ? analysis.setups.find((s) => s.id === pick) ?? analysis.best : null), [analysis, pick]);
-  const tip = useMemo(() => (analysis ? makeTip(setup, inst.label, tf, Math.floor(Date.now() / 1000), account, riskPct) : null), [analysis, setup, inst.label, tf, account, riskPct]);
+  // News, calendar and AI opinion for this market; re-fetched when the market, timeframe or chart call changes.
+  const techKey = setup ? `${setup.verdict}|${setup.dir}|${setup.name}` : "none";
+  useEffect(() => {
+    if (!analysis) return;
+    let stop = false;
+    setNewsLoading(true); setNewsErr("");
+    const tech = setup ? { verdict: setup.verdict, dir: setup.dir, score: setup.score, setup: setup.name, price: analysis.last.c } : null;
+    const id = window.setTimeout(() => getNews(inst, tf, tech).then((n) => { if (!stop) setNews(n); }).catch((e) => { if (!stop) setNewsErr((e as Error).message); }).finally(() => { if (!stop) setNewsLoading(false); }), 400);
+    return () => { stop = true; clearTimeout(id); };
+  }, [inst.id, tf, techKey, !!analysis]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setNews(null); }, [inst.id]);
+  const newsCtx = news ? { events: news.events, stance: news.opinion.stance, moodLabel: news.moodLabel } : undefined;
+  const tip = useMemo(() => (analysis ? makeTip(setup, inst.label, tf, Math.floor(Date.now() / 1000), account, riskPct, newsCtx) : null), [analysis, setup, inst.label, tf, account, riskPct, news]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (v: View) => { location.hash = v; setView(v); setMoreOpen(false); window.scrollTo({ top: 0 }); };
   const open = (i: Instrument) => { setInst(i); go("analyse"); };
   const openById = (id: string) => { const i = [...list, ...CATALOG].find((x) => x.id === id); if (i) open(i); };
@@ -108,6 +127,15 @@ export default function App() {
     setPlacing(false);
   };
   const canPaper = !!setup && !setup.hardFail && setup.triggered && setup.rr1 > 0;
+  const placeOrder = async (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean }) => {
+    if (!jkey) { setTicket(null); setSettingsOpen(true); return; }
+    setPlacing(true); setErr(""); setNote("");
+    try {
+      await paper.open(jkey, { symbol: inst.id, label: inst.label, tf, dir: o.dir, stop: o.stop, target1: o.target1, target2: o.target2, setup: o.fromSetup && setup ? `Manual order on ${setup.name} (${setup.score}%)` : "Manual order", score: o.fromSetup && setup ? setup.score : 0, tip: "", source: "manual" });
+      setNote(`Paper ${o.dir === "long" ? "buy" : "sell"} placed on ${inst.label}.`); setTicket(null);
+    } catch (e) { setErr((e as Error).message); setTicket(null); }
+    setPlacing(false);
+  };
 
   const liveText = status === "live" ? "Live" : status === "polling" ? "Live, every 30 s" : "Connecting";
   const lastPrice = candles.length ? candles[candles.length - 1].c : analysis?.last.c;
@@ -156,11 +184,17 @@ export default function App() {
             <>
               <div className="toolbar">
                 <h1>{inst.label}<span>{inst.name}</span></h1>
-                <p className={`live ${status}`} title={tickAt ? `Last update ${new Date(tickAt).toLocaleTimeString()}` : undefined}><i aria-hidden="true" />{liveText}{lastPrice !== undefined && <b className="mono">{fmt(lastPrice)}</b>}</p>
+                <p className={`live ${status}`} title={tickAt ? `Last update ${new Date(tickAt).toLocaleTimeString()}` : undefined}><i aria-hidden="true" />{liveText}{lastPrice !== undefined && <b className="mono">{fmt(lastPrice)}</b>}<Countdown tf={tf} crypto={inst.id.startsWith("crypto:")} /></p>
                 <div className="seg" role="radiogroup" aria-label="Timeframe">
                   {TFS.map((t) => <button key={t} role="radio" aria-checked={tf === t} className={tf === t ? "on" : ""} onClick={() => setTf(t)}>{t}</button>)}
                 </div>
-                <label className="chk"><input type="checkbox" checked={showEma} onChange={(e) => setShowEma(e.target.checked)} /> EMA 50/200</label>
+                <div className="ind-chips" role="group" aria-label="Indicators">
+                  {([["ema", "EMA"], ["bb", "Bollinger"], ["rsi", "RSI"]] as const).map(([k, l]) => <button key={k} aria-pressed={ind[k]} className={`chip sm ${ind[k] ? "on" : ""}`} onClick={() => setInd({ ...ind, [k]: !ind[k] })}>{l}</button>)}
+                </div>
+                <div className="trade-btns">
+                  <button className="btn buy-btn" onClick={() => setTicket("long")} disabled={!lastPrice}>Buy</button>
+                  <button className="btn sell-btn" onClick={() => setTicket("short")} disabled={!lastPrice}>Sell</button>
+                </div>
                 <button className={`star big ${list.some((x) => x.id === inst.id) ? "on" : ""}`} onClick={() => toggle(inst)}>{list.some((x) => x.id === inst.id) ? "★ Watching" : "☆ Watch"}</button>
               </div>
               {err && <p className="err">{err}</p>}
@@ -168,12 +202,13 @@ export default function App() {
               <div className="analyse">
                 <div className="chart-wrap">
                   <div className="tip-mobile">{tipEl}</div>
-                  {candles.length > 0 ? <Chart candles={candles} analysis={analysis} setup={setup} showEma={showEma} /> : <div className="chart placeholder">{loading ? "Fetching candles…" : "No data"}</div>}
+                  {candles.length > 0 ? <Chart candles={candles} analysis={analysis} setup={setup} ind={ind} /> : <div className="chart placeholder">{loading ? "Fetching candles…" : "No data"}</div>}
                   <p className="legend"><span className="lg-wave">Wave count</span><span className="lg-wy">Wyckoff events</span><span className="lg-lv">Entry, stop and targets</span></p>
                 </div>
                 <div className="side">
                   <div className="tip-desktop">{tipEl}</div>
                   {analysis && <VerdictPanel symbol={inst.label} tfLabel={TF_LABEL[tf]} analysis={analysis} setup={setup} onPick={setPick} account={account} riskPct={riskPct} onSave={saveSignal} saving={saving} />}
+                  <NewsPanel news={news} loading={newsLoading} error={newsErr} setup={setup} />
                 </div>
               </div>
               {analysis && <ContextCards analysis={analysis} />}
@@ -205,6 +240,10 @@ export default function App() {
             <button className="sheet-item" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}>Settings</button>
           </div>
         </div>
+      )}
+
+      {ticket && lastPrice !== undefined && analysis && (
+        <OrderTicket side={ticket} label={inst.label} price={lastPrice} atr={analysis.ind.atr[analysis.ind.atr.length - 1]} setup={setup} account={account} riskPct={riskPct} busy={placing} onClose={() => setTicket(null)} onPlace={placeOrder} />
       )}
 
       {settingsOpen && (
@@ -246,4 +285,17 @@ function SymbolSearch({ onPick }: { onPick: (i: Instrument) => void }) {
       )}
     </div>
   );
+}
+
+/** Time left until the current candle closes. Exact for crypto (UTC-aligned bars); approximate for intraday bars elsewhere. */
+function Countdown({ tf, crypto }: { tf: Tf; crypto: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  const sec = TF_HOURS[tf] * 3600;
+  if (!crypto && sec >= 86400) return null;
+  const offset = tf === "1w" ? 4 * 86400 : 0; // weekly bars open Monday 00:00 UTC; the Unix epoch was a Thursday
+  const left = Math.ceil(sec - ((now / 1000 - offset) % sec));
+  const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), s = left % 60;
+  const txt = tf === "1w" ? `${Math.floor(left / 86400)}d ${Math.floor((left % 86400) / 3600)}h` : h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  return <span className="countdown">candle closes in <span className="mono">{txt}</span></span>;
 }

@@ -2,11 +2,29 @@ import type { Setup, Tf } from "./types";
 import { fmt } from "./analyze";
 
 export type Tip = { tone: "buy" | "sell" | "wait" | "ready"; headline: string; steps: string[]; validUntil: number };
+export type NewsContext = { events: { title: string; currency: string; impact: string; at: number }[]; stance: "bullish" | "bearish" | "neutral"; moodLabel: string };
 
-const TF_HOURS: Record<Tf, number> = { "1h": 1, "4h": 4, "1d": 24, "1w": 168 };
-const TF_WORD: Record<Tf, string> = { "1h": "hourly", "4h": "4-hour", "1d": "daily", "1w": "weekly" };
+function newsSteps(news: NewsContext | undefined, s: Setup | null, tfHours: number, nowSec: number): string[] {
+  if (!news) return [];
+  const out: string[] = [];
+  const windowH = Math.max(3, 2 * tfHours);
+  const soon = news.events.find((e) => e.at / 1000 > nowSec && (e.at / 1000 - nowSec) / 3600 <= windowH && (e.impact === "High" || (e.impact === "Medium" && (e.at / 1000 - nowSec) / 3600 <= 2)));
+  if (soon) {
+    const h = (soon.at / 1000 - nowSec) / 3600;
+    out.push(`Heads up: ${soon.title} (${soon.currency}, ${soon.impact.toLowerCase()} impact) comes out in ${duration(h)}. Big news can jump the price straight past a stop-loss, so if you can, wait until it's out.`);
+  }
+  if (s && s.verdict !== "NO TRADE" && news.stance !== "neutral") {
+    const agrees = (news.stance === "bullish") === (s.dir === "long");
+    out.push(agrees ? `The news mood is ${news.stance}, which agrees with this ${s.dir === "long" ? "buy" : "sell"}.` : `The news mood is ${news.stance}, against this ${s.dir === "long" ? "buy" : "sell"}. Use half your usual size, or wait.`);
+  }
+  return out;
+}
+
+export const TF_HOURS: Record<Tf, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168 };
+const TF_WORD: Record<Tf, string> = { "5m": "5-minute", "15m": "15-minute", "30m": "30-minute", "1h": "hourly", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly" };
 
 export function duration(hours: number): string {
+  if (hours < 1) return `${Math.max(5, Math.round(hours * 60 / 5) * 5)} minutes`;
   if (hours < 20) return `${Math.max(1, Math.round(hours))} hour${Math.round(hours) === 1 ? "" : "s"}`;
   const d = hours / 24;
   if (d < 12) return `${Math.max(1, Math.round(d))} day${Math.round(d) === 1 ? "" : "s"}`;
@@ -17,14 +35,15 @@ export function duration(hours: number): string {
 const chg = (from: number, to: number) => `${to >= from ? "+" : "−"}${(Math.abs(to / from - 1) * 100).toFixed(1)}%`;
 
 /** A short, plain-English instruction anyone can follow. */
-export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, account: number, riskPct: number): Tip {
+export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, account: number, riskPct: number, news?: NewsContext): Tip {
   const h = TF_HOURS[tf];
   const validUntil = now + 3 * h * 3600;
+  const extra = newsSteps(news, s, h, now);
   if (!s || s.verdict === "NO TRADE") {
     return {
       tone: "wait", validUntil,
       headline: `Don't trade ${name} right now`,
-      steps: [
+      steps: [...extra,
         `Nothing clear is setting up on the ${TF_WORD[tf]} chart, so the safest move is to do nothing.`,
         s?.hardFail ? "The wave pattern breaks one of Neely's must-pass rules, so any trade here would be a guess." : `Only ${s?.score ?? 0}% of the book rules agree, and Viko needs 80% before it says go.`,
         `Check again in about ${duration(3 * h)}, or scan other markets for a better chance.`,
@@ -41,7 +60,7 @@ export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, acco
     return {
       tone: buy ? "buy" : "sell", validUntil,
       headline: `${verb} ${name} now`,
-      steps: [
+      steps: [...extra,
         `${verb} at about ${fmt(s.entry)}, today's price${shortNote}.`,
         `Set your stop-loss at ${fmt(s.stop)}. If the price ${buy ? "falls" : "rises"} there, the trade closes automatically and you lose about ${lossPct.toFixed(1)}%.`,
         `Take profit in two steps: half at ${fmt(s.target1)} (${chg(s.entry, s.target1)}), the rest at ${fmt(s.target2)} (${chg(s.entry, s.target2)}).`,
@@ -54,7 +73,7 @@ export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, acco
     return {
       tone: "ready", validUntil,
       headline: `Get ready to ${buy ? "buy" : "sell"} ${name}, but not yet`,
-      steps: [
+      steps: [...extra,
         `Wait for a ${TF_WORD[tf]} candle to close ${buy ? "above" : "below"} ${fmt(s.entry)}. Until then, do nothing.`,
         `If that happens, ${verb.toLowerCase()} with a stop-loss at ${fmt(s.stop)} and a first target at ${fmt(s.target1)}.`,
         `Re-check Viko after that candle closes: the trade only counts once it is approved.`,
@@ -64,7 +83,7 @@ export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, acco
   return {
     tone: "wait", validUntil,
     headline: `${name} looks promising, but don't ${buy ? "buy" : "sell"} yet`,
-    steps: [
+    steps: [...extra,
       `A ${buy ? "rise" : "fall"} is possible, but only ${s.score}% of the book rules agree. Viko waits for 80%.`,
       s.rr1 < 2 ? `The reward isn't worth the risk yet: the first target is only ${s.rr1.toFixed(1)}× as far as the stop.` : `Watch for the missing confirmations listed below.`,
       `Check again in about ${duration(h)}.`,

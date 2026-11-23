@@ -332,7 +332,7 @@ function htfTrend(c: Candle[]): { dir: Dir | null; note: string } {
   return { dir: null, note: "Mixed: the higher timeframe is ranging." };
 }
 
-const HTF_FACTOR: Record<Tf, number> = { "1h": 4, "4h": 6, "1d": 7, "1w": 4 };
+const HTF_FACTOR: Record<Tf, number> = { "5m": 12, "15m": 4, "30m": 8, "1h": 4, "2h": 12, "4h": 6, "1d": 7, "1w": 4 };
 
 export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[]): Analysis {
   const ind = computeIndicators(c);

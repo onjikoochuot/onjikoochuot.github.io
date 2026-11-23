@@ -60,7 +60,7 @@ export async function getCandles(symbol: string, tf: Tf, fresh = false): Promise
   return j.candles;
 }
 
-export const HTF: Record<Tf, Tf | null> = { "1h": "4h", "4h": "1d", "1d": "1w", "1w": null };
+export const HTF: Record<Tf, Tf | null> = { "5m": "1h", "15m": "1h", "30m": "4h", "1h": "4h", "2h": "1d", "4h": "1d", "1d": "1w", "1w": null };
 
 export async function searchSymbols(q: string): Promise<Instrument[]> {
   const out: Instrument[] = [];
@@ -118,3 +118,20 @@ export const paper = {
   settings: (key: string, b: Record<string, unknown>) => pfetch(key, "settings", b),
   tick: (key: string, force = false) => pfetch(key, "tick", { force }),
 };
+
+// ---------- News, events and opinion ----------
+export const NEWS = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-news";
+export type Headline = { title: string; source: string; url: string; at: number; score: number };
+export type MarketEvent = { title: string; currency: string; impact: string; at: number; forecast: string; previous: string };
+export type NewsBrief = { headlines: Headline[]; mood: number; moodLabel: "positive" | "negative" | "mixed"; events: MarketEvent[]; currencies: string[]; opinion: { text: string; stance: "bullish" | "bearish" | "neutral"; by: "ai" | "rules" }; at: number };
+const newsCache = new Map<string, { at: number; data: NewsBrief }>();
+export async function getNews(inst: Instrument, tf: string, technical: { verdict: string; dir: string; score: number; setup: string; price: number } | null): Promise<NewsBrief> {
+  const key = `${inst.id}|${tf}|${technical?.verdict}|${technical?.dir}|${technical?.setup}`;
+  const hit = newsCache.get(key);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.data;
+  const r = await fetch(NEWS, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol: inst.id, name: inst.name, market: inst.market, tf, technical }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.headlines) throw new Error(j.error ?? "News is unavailable right now.");
+  newsCache.set(key, { at: Date.now(), data: j });
+  return j;
+}
