@@ -618,3 +618,8 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .alert-save.show { display: flex; }
 .alert-recent { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; font-size: 13.5px; }
 @media (max-width: 760px) { .alert-save { bottom: 72px; } .alert-grid { grid-template-columns: 1fr; } }
+.phone-setup { margin: 4px 0 12px; display: grid; gap: 8px; }
+.phone-qr { background: #fff; padding: 8px; border-radius: 8px; justify-self: start; image-rendering: pixelated; }
+.phone-btns { justify-content: flex-start; margin-top: 0; }
+.phone-key { word-break: break-all; font-size: 13px; background: var(--hull-2); padding: 6px 8px; border-radius: 6px; }
+.setup-note { margin: 0 0 12px; }

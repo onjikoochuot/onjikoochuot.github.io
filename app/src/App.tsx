@@ -16,6 +16,7 @@ import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
 import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
 import RealTrade from "./components/RealTrade";
+import PhoneSetup, { takeSetupKey } from "./components/PhoneSetup";
 import PaperTicket, { type PaperPick } from "./components/PaperTicket";
 import Alerts from "./components/Alerts";
 import HighPerformers, { LiveScan } from "./components/HighPerformers";
@@ -67,6 +68,8 @@ export default function App() {
   const [paperPicks, setPaperPicks] = useState<PaperPick[] | null>(null);
   const [account, setAccount] = useState<number>(() => store("account", 10000));
   const [riskPct, setRiskPct] = useState<number>(() => store("risk", 1));
+  const [setupDone, setSetupDone] = useState(false);
+  const [setupNote] = useState(() => { const k = takeSetupKey(); if (k) save("jkey", k); return k ? "This device is set up with your app key. Install it from Settings → Install on this device." : ""; });
   const [jkey, setJkey] = useState<string>(() => store("jkey", ""));
   const [saving, setSaving] = useState("");
   const [placing, setPlacing] = useState(false);
@@ -253,6 +256,7 @@ export default function App() {
         </aside>
 
         <main className="main">
+          {setupNote && !setupDone && <p className="ok-msg setup-note">{setupNote} <button className="link" onClick={() => { setSetupDone(true); setSettingsOpen(true); }}>Open Settings</button></p>}
           {view === "analyse" && (
             <>
               <div className="toolbar">
@@ -334,6 +338,7 @@ export default function App() {
           <div className="sheet">
             <h2 id="set-h">Settings</h2>
             <label>App key<input type="password" value={jkey} onChange={(e) => setJkey(e.target.value.trim())} autoComplete="off" /><small>Unlocks paper trading and your journal. Stored only in this browser.</small></label>
+            <PhoneSetup appKey={jkey} />
             <label>Account size for position sizing<input type="number" min={0} value={account} onChange={(e) => setAccount(Number(e.target.value))} /></label>
             <label>Risk per trade, %<input type="number" min={0.1} max={5} step={0.1} value={riskPct} onChange={(e) => setRiskPct(Number(e.target.value))} /><small>Villahermosa recommends no more than 1% (ch. 27).</small></label>
             <h3>Install on this device</h3>
