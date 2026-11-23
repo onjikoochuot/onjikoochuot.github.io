@@ -52,7 +52,7 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
     setBusy(true); setErr("");
     try {
       const r = await auto.start(appKey, cfg);
-      setDone(`${r.placed} trade${r.placed === 1 ? "" : "s"} placed${live ? " with real money" : " on demo"}. Viko now manages the stop-loss and takes profit for you.`);
+      setDone(`${r.placed} trade${r.placed === 1 ? "" : "s"} placed${live ? " with real money" : " on demo"}. Viko now trails the stop-loss to protect and lock in profit, and takes profit for you.`);
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   };
@@ -99,7 +99,7 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
                 </div>
                 <p className="rt-when">Come back around <b>{when(now + tot.h0 * 3600000)}</b>; {many ? "they should be" : "it should be"} done by about <b>{when(now + tot.h1 * 3600000)}</b>.{pv.closeBy ? ` Viko closes anything still open on ${when(pv.closeBy)}.` : ""}</p>
                 {pv.skipped.length > 0 && <p className="sub">Left out: {pv.skipped.join(" ")}</p>}
-                <p className="sub">Profit figures are targets, not promises.</p>
+                <p className="sub">Viko trails the stop-loss every 5 minutes so it only moves in your favour: risk halved halfway to target 1, no-loss at 80% of the way, then profit locked in as the price rises. Profit figures are targets, not promises.</p>
               </>
             )}
 

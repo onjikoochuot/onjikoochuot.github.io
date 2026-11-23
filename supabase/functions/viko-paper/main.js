@@ -1,6 +1,40 @@
 // supabase/functions/viko-paper/index.ts
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+// supabase/functions/viko-paper/trail.ts
+function trailStop(x) {
+  const s = x.dir === "long" ? 1 : -1;
+  const e = x.entry * s, s0 = x.initialStop * s, cur = x.stop * s, t1 = x.target1 * s, t2 = x.target2 * s;
+  const px = x.price * s, pk = Math.max(x.peak * s, px);
+  const r1 = t1 - e;
+  if (!(r1 > 0) || ![e, s0, cur, t1, t2, px, pk].every(Number.isFinite)) return null;
+  const g = pk - e;
+  let cand = s0, why = "";
+  if (g >= 0.5 * r1 && e - 0.5 * (e - s0) > cand) {
+    cand = e - 0.5 * (e - s0);
+    why = "halfway to target 1, so the risk is cut in half";
+  }
+  if (g >= 0.8 * r1 && e > cand) {
+    cand = e;
+    why = "close to target 1, so the stop is now at the entry price and the trade can't lose";
+  }
+  if ((x.t1Hit || g >= r1) && e + 0.5 * g > cand) {
+    cand = e + 0.5 * g;
+    why = "past target 1, so the stop locks in half of the best gain so far";
+  }
+  if (t2 > e && g >= 0.6 * (t2 - e) && t1 > cand) {
+    cand = t1;
+    why = "well on the way to target 2, so the stop is at target 1";
+  }
+  cand = Math.min(cand, px - 0.25 * r1);
+  if (cand <= cur + 0.05 * r1) return null;
+  return { stop: cand * s, why, locksProfit: cand > e };
+}
+var nextPeak = (dir, peak, ...prices) => {
+  const all = [peak, ...prices].filter((v) => typeof v === "number" && Number.isFinite(v) && v > 0);
+  return all.length ? dir === "long" ? Math.max(...all) : Math.min(...all) : NaN;
+};
+
 // supabase/functions/viko-paper/market.ts
 var UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 async function binance(sym, tf) {
@@ -217,7 +251,7 @@ async function closePart(db, t, price, part, reason) {
   Object.assign(t, patch);
   if (reason === "target1") await alert(db, "t1", `Paper ${t.label}: target 1 hit`, `Half closed at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}). Stop moved to entry.`, pnl);
   if (done) await alert(db, "close", `Paper ${t.label} closed: ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)}`, `Closed at ${fmt(price)} (${reason === "manual" ? "by you" : reason}). Total result ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)} paper dollars.`, Number(patch.realized));
-  await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "stop" ? t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed" : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
+  await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "trailing" ? "trailing stop hit, profit locked in" : reason === "stop" ? t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed" : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
 }
 async function manage(db, open) {
   const bySym = /* @__PURE__ */ new Map();
@@ -230,19 +264,27 @@ async function manage(db, open) {
         if (t.status !== "open") break;
         const hitStop = long ? k.l <= t.stop : k.h >= t.stop;
         if (hitStop) {
-          await closePart(db, t, t.stop, t.qty_open, "stop");
+          const locked = long ? t.stop > t.entry : t.stop < t.entry;
+          await closePart(db, t, t.stop, t.qty_open, locked ? "trailing" : "stop");
           break;
         }
         if (!t.t1_hit && (long ? k.h >= t.target1 : k.l <= t.target1)) {
           await closePart(db, t, t.target1, t.qty / 2, "target1");
           t.t1_hit = true;
-          t.stop = t.entry;
+          t.stop = long ? Math.max(t.stop, t.entry) : Math.min(t.stop, t.entry);
           await db.from("viko_paper_trades").update({ t1_hit: true, stop: t.entry }).eq("id", t.id);
         }
         if (t.t1_hit && t.status === "open" && (long ? k.h >= t.target2 : k.l <= t.target2)) {
           await closePart(db, t, t.target2, t.qty_open, "target2");
           break;
         }
+        t.peak = nextPeak(t.dir, t.peak ?? t.entry, long ? k.h : k.l);
+        const tr = trailStop({ dir: t.dir, entry: t.entry, initialStop: t.initial_stop ?? t.stop, stop: t.stop, target1: t.target1, target2: t.target2, peak: t.peak, price: k.c, t1Hit: !!t.t1_hit });
+        if (tr) {
+          t.stop = tr.stop;
+          await log(db, t.id, "trail", `${t.label}: stop-loss moved to ${fmt(tr.stop)}: ${tr.why}.`);
+        }
+        await db.from("viko_paper_trades").update({ stop: t.stop, peak: t.peak }).eq("id", t.id);
       }
       const series = bySym.get(t.symbol);
       if (t.status === "open" && series.length) await db.from("viko_paper_trades").update({ last_price: series[series.length - 1].c, last_checked: series[series.length - 1].t }).eq("id", t.id);

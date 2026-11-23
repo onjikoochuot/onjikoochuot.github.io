@@ -118,6 +118,17 @@ export function Rulebook() {
         <li>Post-pattern confirmation (p. 6-1 to 6-3): an impulse is confirmed when the 2-4 line breaks in no more time than wave 5 took; a zigzag or flat when the 0-B line breaks in no more time than wave c took.</li>
         <li>Targets follow the Rule of Equality and Neely's Fibonacci notes (p. 5-8, 5-11, 5-12) and the Stage 2 retracement requirements (p. 6-2).</li>
       </ul>
+      <h3>How a running trade is managed</h3>
+      <p>Every 5 minutes for real-money and demo trades (every hour's candle for paper trades), on every broker, Viko records the best price the trade has reached and moves the stop-loss only in the trade's favour:</p>
+      <ul>
+        <li>Halfway to target 1: the stop moves halfway between the original stop and the entry, so the risk is cut in half.</li>
+        <li>80% of the way to target 1: the stop moves to the entry price, so the trade can no longer lose.</li>
+        <li>Target 1: half the position is taken as profit, and the stop locks in half of the best gain so far, rising as the price does.</li>
+        <li>60% of the way to target 2: the stop is at least at target 1.</li>
+        <li>The stop always stays at least a quarter of the entry-to-target-1 distance away from the price, so ordinary swings don't knock the trade out. It never moves backwards.</li>
+        <li>Binance, Bybit and MT5 hold the stop on the broker itself. Deriv's stop can only be a loss amount, so once the stop is past the entry Viko closes the Deriv contract itself if the price falls back to it.</li>
+      </ul>
+      <p>This applies to Auto-trade, every Real money button and paper trades. Orders placed by hand on the Binance tab are not managed.</p>
       <h3>Where Viko simplifies the book</h3>
       <p>Neely builds counts from monowaves plotted on cash data, then compacts them into larger patterns with Structure labels (chapters 3, 7 and 8). Viko finds monowaves with a volatility-scaled swing filter at three sizes and tests standard patterns only. It doesn't yet count complex corrections (double and triple threes), triangles or the advanced logic of chapters 9 to 12. When a market is in one of those, Viko says "no trade" rather than guess.</p>
       <h3>Wyckoff</h3>

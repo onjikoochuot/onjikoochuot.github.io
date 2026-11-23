@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 node scripts/gen-universe.mjs
 for f in viko-market viko-paper viko-picks; do cp supabase/functions/_shared/market.ts supabase/functions/$f/market.ts; done
 cp supabase/functions/_shared/universe.ts supabase/functions/viko-picks/universe.ts
+for f in viko-auto viko-paper; do cp app/src/engine/trail.ts supabase/functions/$f/trail.ts; done
 cat > /tmp/engine-entry.ts <<'TS'
 export { analyze } from "./app/src/engine/analyze";
 export { makeTip } from "./app/src/engine/layman";
@@ -14,10 +15,9 @@ app/node_modules/.bin/esbuild engine-entry.ts --bundle --format=esm --platform=n
 rm engine-entry.ts
 echo "functions built"
 # viko-auto ships as compiled JS loaded from a pinned commit (supabase/functions/viko-auto/index.ts is the source).
-app/node_modules/.bin/esbuild supabase/functions/viko-auto/index.ts --format=esm --platform=neutral --target=es2022 --outfile=supabase/functions/viko-auto/main.js --log-level=warning
-sed -i '1{/edge-runtime.d.ts/d}' supabase/functions/viko-auto/main.js
+# (viko-auto is bundled with the others below so trail.ts is inlined)
 # viko-picks and viko-paper ship the same way: bundled locally (market.ts, universe.ts inlined), remote imports left as they are.
-for f in viko-picks viko-paper viko-notify; do
+for f in viko-auto viko-picks viko-paper viko-notify; do
   app/node_modules/.bin/esbuild supabase/functions/$f/index.ts --bundle --format=esm --platform=neutral --target=es2022 --external:'jsr:*' --external:'npm:*' --external:'https://*' --outfile=supabase/functions/$f/main.js --log-level=warning
   sed -i '/edge-runtime.d.ts/d' supabase/functions/$f/main.js
 done

@@ -35,7 +35,7 @@ const SECTIONS: { id: string; title: string; open?: string; steps: string[] }[] 
   { id: "real", title: "7. Trade with real money", open: "top", steps: [
     "Press Real money on a chart, a pick or a High performers row (or select several). Type the amount, choose Real money or Demo, the broker (or Best fit) and the risk level.",
     "Viko shows the live broker price, the stop-loss, both targets, the leverage, your expected profit at target 1 and 2, what you'd lose at the stop, and when to come back. Tick the confirmation and press Trade.",
-    "From then on Viko manages it every 5 minutes: half the profit at target 1, stop moved to your entry, the rest closed at target 2, the stop or Viko's time limit. Watch or collect early under Auto-trade → Running.",
+    "From then on Viko manages it every 5 minutes. The stop-loss trails the price and only moves in your favour: risk halved halfway to target 1, moved to your entry at 80% of the way, then locking in half of the best gain once past target 1. Half the profit is taken at target 1; the rest closes at target 2, the trailing stop or Viko's time limit. Watch or collect early under Auto-trade → Running.",
   ] },
   { id: "auto", title: "8. Auto-trade with one button", open: "auto", steps: [
     "Auto-trade → Start: choose the broker, demo or live, the money, how many trades (1 to 20), how to share the money, how long (24 hours to 1 month), how strict and how much risk.",

@@ -6,6 +6,7 @@
 // POST /viko-paper/tick      manage open trades against live prices, then run the autopilot scan
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { nextPeak, trailStop } from "./trail.ts";
 import { candles, quotes, sha256, type Candle, type Tf } from "./market.ts";
 // @ts-ignore engine bundle (scripts/build-functions.sh), pinned to a commit
 import { analyze, makeTip } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@c77a63cf778ec7acec7aee88b13f7c62705344c2/supabase/functions/viko-paper/engine.js";
@@ -103,7 +104,7 @@ async function closePart(db: DB, t: any, price: number, part: number, reason: st
   Object.assign(t, patch);
   if (reason === "target1") await alert(db, "t1", `Paper ${t.label}: target 1 hit`, `Half closed at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}). Stop moved to entry.`, pnl);
   if (done) await alert(db, "close", `Paper ${t.label} closed: ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)}`, `Closed at ${fmt(price)} (${reason === "manual" ? "by you" : reason}). Total result ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)} paper dollars.`, Number(patch.realized));
-  await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "stop" ? (t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed") : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
+  await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "trailing" ? "trailing stop hit, profit locked in" : reason === "stop" ? (t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed") : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
 }
 
 /** Walk the hourly bars since the last check and apply stop / targets in a conservative order. */
@@ -117,13 +118,18 @@ async function manage(db: DB, open: any[]) {
       for (const k of bars) {
         if (t.status !== "open") break;
         const hitStop = long ? k.l <= t.stop : k.h >= t.stop;
-        if (hitStop) { await closePart(db, t, t.stop, t.qty_open, "stop"); break; }
+        if (hitStop) { const locked = long ? t.stop > t.entry : t.stop < t.entry; await closePart(db, t, t.stop, t.qty_open, locked ? "trailing" : "stop"); break; }
         if (!t.t1_hit && (long ? k.h >= t.target1 : k.l <= t.target1)) {
           await closePart(db, t, t.target1, t.qty / 2, "target1");
-          t.t1_hit = true; t.stop = t.entry;
+          t.t1_hit = true; t.stop = long ? Math.max(t.stop, t.entry) : Math.min(t.stop, t.entry);
           await db.from("viko_paper_trades").update({ t1_hit: true, stop: t.entry }).eq("id", t.id);
         }
         if (t.t1_hit && t.status === "open" && (long ? k.h >= t.target2 : k.l <= t.target2)) { await closePart(db, t, t.target2, t.qty_open, "target2"); break; }
+        // Trail the stop with this hour's best price, exactly like the real-money managers.
+        t.peak = nextPeak(t.dir, t.peak ?? t.entry, long ? k.h : k.l);
+        const tr = trailStop({ dir: t.dir, entry: t.entry, initialStop: t.initial_stop ?? t.stop, stop: t.stop, target1: t.target1, target2: t.target2, peak: t.peak, price: k.c, t1Hit: !!t.t1_hit });
+        if (tr) { t.stop = tr.stop; await log(db, t.id, "trail", `${t.label}: stop-loss moved to ${fmt(tr.stop)}: ${tr.why}.`); }
+        await db.from("viko_paper_trades").update({ stop: t.stop, peak: t.peak }).eq("id", t.id);
       }
       const series = bySym.get(t.symbol)!;
       if (t.status === "open" && series.length) await db.from("viko_paper_trades").update({ last_price: series[series.length - 1].c, last_checked: series[series.length - 1].t }).eq("id", t.id);

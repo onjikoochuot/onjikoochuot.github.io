@@ -13,6 +13,7 @@
 //   POST /manage               (cron)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { nextPeak, trailStop } from "./trail.ts";
 
 type DB = ReturnType<typeof createClient>;
 type Mode = "demo" | "live";
@@ -750,6 +751,25 @@ async function fill(db: DB, plan: any, d: Deriv | null) {
 }
 
 // ======================= managing =======================
+/** Where the trailing rule wants the stop now (null = leave it). Also returns the updated best price. */
+function trailFor(p: any, price: number, t1Hit: boolean) {
+  const peak = nextPeak(p.dir, p.peak ?? p.entry, price);
+  const t = trailStop({ dir: p.dir, entry: Number(p.entry), initialStop: Number(p.initial_stop ?? p.stop), stop: Number(p.stop), target1: Number(p.target1), target2: Number(p.target2), peak, price, t1Hit });
+  return { peak, t };
+}
+const closeReason = (p: any, exit: number) => {
+  const long = p.dir === "long", lockedProfit = long ? p.stop > p.entry : p.stop < p.entry, atEntry = Math.abs(p.stop - p.entry) / p.entry < 1e-6;
+  if (Math.abs(exit - p.stop) < Math.abs(exit - p.target2)) return lockedProfit ? "trailing stop (profit locked)" : atEntry ? "stop at entry" : p.stop !== p.initial_stop ? "trailing stop" : "stop";
+  return "target 2";
+};
+/** Binance: replace just the stop order, keeping the take-profit orders. */
+async function bnMoveStop(mode: Mode, sym: string, long: boolean, stop: number, tick: number) {
+  const algos: any[] = await bn(mode, "GET", "/fapi/v1/openAlgoOrders", { symbol: sym }).catch(() => []);
+  const old = algos.filter((o) => o.orderType === "STOP_MARKET");
+  for (const o of old) await bn(mode, "DELETE", "/fapi/v1/algoOrder", { algoId: o.algoId }).catch(() => {});
+  try { await bnProtect(mode, sym, long, stop, null, tick); }
+  catch (e) { if (old[0]) await bnProtect(mode, sym, long, Number(old[0].triggerPrice), null, tick).catch(() => {}); throw e; }
+}
 async function manageBinance(db: DB, p: any, endNow: boolean, why = "time") {
   const mode = p.mode as Mode, sym = p.broker_symbol, sc = p.refs?.scale ?? 1, tick = p.refs?.tick ?? 0.0001, long = p.dir === "long";
   const since = p.refs?.opened_ms ?? Date.parse(p.opened_at);
@@ -759,7 +779,7 @@ async function manageBinance(db: DB, p: any, endNow: boolean, why = "time") {
     if (pos) exit = ((await bnClose(mode, sym)) ?? p.last_price * sc) / sc;
     await bn(mode, "DELETE", "/fapi/v1/algoOpenOrders", { symbol: sym }).catch(() => {});
     const pnl = await bnRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
-    const reason = pos ? why : Math.abs(exit - p.stop) < Math.abs(exit - p.target2) ? (p.t1_hit ? "stop at entry" : "stop") : "target 2";
+    const reason = pos ? why : closeReason(p, exit);
     await db.from("viko_auto_positions").update({ status: "closed", closed_at: new Date().toISOString(), pnl: r2(pnl), close_reason: reason, last_price: exit, last_pnl: r2(pnl), updated_at: new Date().toISOString() }).eq("id", p.id);
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${pnl >= 0 ? "+" : ""}${r2(pnl)} USDT.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(pnl)} USDT`, `${pnl >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(pnl))} USDT on ${p.stake} USDT (${reason}). Binance, exit ${fmt(exit)}.`, r2(pnl));
@@ -770,42 +790,70 @@ async function manageBinance(db: DB, p: any, endNow: boolean, why = "time") {
   const patch: any = { last_price: mark, last_pnl: r2(Number(pos.unRealizedProfit) + realized), updated_at: new Date().toISOString() };
   const algos: any[] = await bn(mode, "GET", "/fapi/v1/openAlgoOrders", { symbol: sym }).catch(() => []);
   const hasStop = algos.some((o) => o.orderType === "STOP_MARKET");
-  const prog = (long ? mark - p.entry : p.entry - mark) / Math.abs(p.target2 - p.entry);
-  let newStop: number | null = null, msg = "";
-  if (!p.t1_hit && amt <= p.qty * 0.75) { patch.t1_hit = true; newStop = p.entry; msg = `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price, so the rest can't lose.`; await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit; the stop is now at the entry price, so the rest can't lose. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl); }
-  else if (p.t1_hit && prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) { newStop = p.target1; msg = `${p.label}: well on the way to target 2. Stop raised to target 1 to lock in profit.`; }
-  if (newStop !== null || !hasStop) {
-    const st = newStop ?? p.stop;
-    await bn(mode, "DELETE", "/fapi/v1/algoOpenOrders", { symbol: sym }).catch(() => {});
-    await bnProtect(mode, sym, long, st * sc, p.target2 * sc, tick);
-    patch.stop = st;
-    await event(db, p.plan_id, p.id, msg || `${p.label}: the stop-loss was missing on Binance, so Viko put it back at ${fmt(st)}.`);
+  const t1Now = !p.t1_hit && amt <= p.qty * 0.75;
+  if (t1Now) { patch.t1_hit = true; await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`); await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit. Viko now trails the stop to lock in more as the price moves. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl); }
+  const { peak, t } = trailFor(p, mark, p.t1_hit || t1Now);
+  patch.peak = peak;
+  if (t) {
+    try { await bnMoveStop(mode, sym, long, t.stop * sc, tick); patch.stop = t.stop; await event(db, p.plan_id, p.id, `${p.label}: stop-loss moved to ${fmt(t.stop)}: ${t.why}.`); }
+    catch (e) { await event(db, p.plan_id, p.id, `${p.label}: couldn't move the stop on Binance (${(e as Error).message}); it stays at ${fmt(p.stop)}.`); }
+  } else if (!hasStop) {
+    await bnProtect(mode, sym, long, p.stop * sc, p.t1_hit ? p.target2 * sc : null, tick);
+    await event(db, p.plan_id, p.id, `${p.label}: the stop-loss was missing on Binance, so Viko put it back at ${fmt(p.stop)}.`);
   }
   await db.from("viko_auto_positions").update(patch).eq("id", p.id);
 }
 
 async function manageDeriv(db: DB, p: any, d: Deriv, endNow: boolean, why = "time") {
   const cons: any[] = p.refs?.contracts ?? [];
-  let total = 0, allSold = true, spot = p.last_price;
-  const states: any[] = [];
-  for (const c of cons) {
-    let s = await d.poc(c.id).catch(() => null);
-    if (s && !s.is_sold && endNow) { await d.send({ sell: c.id, price: 0 }).catch(() => {}); s = await d.poc(c.id).catch(() => s); }
-    states.push({ c, s });
-    if (s) { total += Number(s.profit ?? 0); spot = Number(s.current_spot ?? spot); if (!s.is_sold) allSold = false; }
+  const long = p.dir === "long";
+  const read = async () => {
+    let total = 0, allSold = true, spot = p.last_price;
+    const states: any[] = [];
+    for (const c of cons) {
+      const st = await d.poc(c.id).catch(() => null);
+      states.push({ c, s: st });
+      if (st) { total += Number(st.profit ?? 0); spot = Number(st.current_spot ?? spot); if (!st.is_sold) allSold = false; }
+    }
+    return { total, allSold, spot, states };
+  };
+  let { total, allSold, spot, states } = await read();
+  // Deriv stops are money amounts and can't lock in profit, so once Viko's stop is past the entry it closes the contracts itself.
+  const lockedProfit = long ? p.stop > p.entry : p.stop < p.entry;
+  const crossed = lockedProfit && (long ? spot <= p.stop : spot >= p.stop);
+  if ((endNow || crossed) && !allSold) {
+    for (const x of states) if (x.s && !x.s.is_sold) await d.send({ sell: x.c.id, price: 0 }).catch(() => {});
+    ({ total, allSold, spot, states } = await read());
+    if (crossed && !endNow) { endNow = true; why = "trailing stop (profit locked)"; }
   }
   const patch: any = { last_price: spot, last_pnl: r2(total), updated_at: new Date().toISOString() };
-  const t1 = states.find((x) => x.c.role === "t1"), t2 = states.find((x) => x.c.role === "t2");
-  if (!p.t1_hit && t1?.s?.is_sold && Number(t1.s.profit) > 0) {
-    patch.t1_hit = true; patch.stop = p.entry;
-    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Deriv. Result so far ${sgn(total)} USD.`, r2(total));
-    if (t2?.s && !t2.s.is_sold) {
-      const ok = await d.send({ contract_update: 1, contract_id: t2.c.id, limit_order: { stop_loss: Math.max(0.1, r2(t2.c.stake * 0.02)) } }).then(() => true, () => false);
-      await event(db, p.plan_id, p.id, ok ? `${p.label}: target 1 hit, half taken as profit. The rest now risks almost nothing.` : `${p.label}: target 1 hit, half taken as profit.`);
-    } else await event(db, p.plan_id, p.id, `${p.label}: target 1 hit.`);
+  const t1 = states.find((x) => x.c.role === "t1");
+  const t1Now = !p.t1_hit && !!t1?.s?.is_sold && Number(t1.s.profit) > 0;
+  if (t1Now) {
+    patch.t1_hit = true;
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Deriv. Viko now trails the stop to lock in more. Result so far ${sgn(total)} USD.`, r2(total));
+  }
+  if (!allSold) {
+    const { peak, t } = trailFor(p, spot, p.t1_hit || t1Now);
+    patch.peak = peak;
+    if (t) {
+      // Broker-side: the loss amount that matches the new stop (or the smallest Deriv allows once the stop is in profit).
+      const lossFrac = t.locksProfit ? 0 : Math.abs(p.entry - t.stop) / p.entry;
+      let moved = 0;
+      for (const x of states) {
+        if (!x.s || x.s.is_sold) continue;
+        const mult = Number(x.s.multiplier ?? p.leverage ?? 1), stake = Number(x.c.stake ?? x.s.buy_price ?? 0);
+        const amount = Math.max(0.1, r2(stake * mult * lossFrac), r2(stake * 0.02));
+        if (await d.send({ contract_update: 1, contract_id: x.c.id, limit_order: { stop_loss: Math.min(amount, r2(stake * 0.95)) } }).then(() => true, () => false)) moved++;
+      }
+      patch.stop = t.stop;
+      await event(db, p.plan_id, p.id, `${p.label}: stop-loss moved to ${fmt(t.stop)}: ${t.why}.${t.locksProfit ? " Viko will close it if the price falls back to that level." : ""}${moved ? "" : " (Deriv didn't accept the change; Viko watches it instead.)"}`);
+    }
   }
   if (allSold) {
-    const reason = endNow ? why : total > 0 ? (t2?.s && Number(t2.s.profit) > 0 ? "target 2" : "target 1") : "stop";
+    const t2 = states.find((x) => x.c.role === "t2");
+    const reason = endNow ? why : total > 0 ? (t2?.s && Number(t2.s.profit) > 0 && Math.abs(spot - p.target2) < Math.abs(spot - p.stop) ? "target 2" : p.t1_hit ? closeReason(p, spot) : "target 1") : closeReason(p, spot);
     Object.assign(patch, { status: "closed", closed_at: new Date().toISOString(), pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${total >= 0 ? "+" : ""}${r2(total)} USD.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)} USD`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} USD on ${p.stake} USD (${reason}). Deriv, last price ${fmt(spot)}.`, r2(total));
@@ -822,7 +870,7 @@ async function manageBybit(db: DB, p: any, endNow: boolean, why = "time") {
     if (pos) exit = (await byClose(mode, sym)) ?? p.last_price;
     await by(mode, "POST", "/v5/order/cancel-all", { category: "linear", symbol: sym }).catch(() => {});
     const pnl = await byRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
-    const reason = pos ? why : Math.abs(exit - p.stop) < Math.abs(exit - p.target2) ? (p.t1_hit ? "stop at entry" : "stop") : "target 2";
+    const reason = pos ? why : closeReason(p, exit);
     await db.from("viko_auto_positions").update({ status: "closed", closed_at: new Date().toISOString(), pnl: r2(pnl), close_reason: reason, last_price: exit, last_pnl: r2(pnl), updated_at: new Date().toISOString() }).eq("id", p.id);
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(pnl)} USDT.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(pnl)} USDT`, `${pnl >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(pnl))} USDT on ${p.stake} USDT (${reason}). Bybit, exit ${fmt(exit)}.`, r2(pnl));
@@ -831,15 +879,14 @@ async function manageBybit(db: DB, p: any, endNow: boolean, why = "time") {
   const size = Number(pos.size), mark = Number(pos.markPrice);
   const realized = p.t1_hit ? await byRealized(mode, sym, since).catch(() => 0) : 0;
   const patch: any = { last_price: mark, last_pnl: r2(Number(pos.unrealisedPnl) + realized), updated_at: new Date().toISOString() };
-  const prog = (long ? mark - p.entry : p.entry - mark) / Math.abs(p.target2 - p.entry);
-  let newStop: number | null = null, msg = "";
-  if (!p.t1_hit && size <= p.qty * 0.75) { patch.t1_hit = true; newStop = p.entry; msg = `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price.`; await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Bybit; the stop is now at the entry price. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl); }
-  else if (p.t1_hit && prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) { newStop = p.target1; msg = `${p.label}: well on the way to target 2. Stop raised to target 1.`; }
-  if (newStop !== null || !Number(pos.stopLoss)) {
-    const st = newStop ?? p.stop;
-    await byStop(mode, sym, st, tick);
-    patch.stop = st;
-    await event(db, p.plan_id, p.id, msg || `${p.label}: the stop-loss was missing on Bybit, so Viko put it back at ${fmt(st)}.`);
+  const t1Now = !p.t1_hit && size <= p.qty * 0.75;
+  if (t1Now) { patch.t1_hit = true; await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`); await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Bybit. Viko now trails the stop to lock in more. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl); }
+  const { peak, t } = trailFor(p, mark, p.t1_hit || t1Now);
+  patch.peak = peak;
+  if (t || !Number(pos.stopLoss)) {
+    const st = t ? t.stop : p.stop;
+    try { await byStop(mode, sym, st, tick); patch.stop = st; await event(db, p.plan_id, p.id, t ? `${p.label}: stop-loss moved to ${fmt(st)}: ${t.why}.` : `${p.label}: the stop-loss was missing on Bybit, so Viko put it back at ${fmt(st)}.`); }
+    catch (e) { await event(db, p.plan_id, p.id, `${p.label}: couldn't move the stop on Bybit (${(e as Error).message}).`); }
   }
   await db.from("viko_auto_positions").update(patch).eq("id", p.id);
 }
@@ -860,15 +907,19 @@ async function manageMt5(db: DB, p: any, endNow: boolean, why = "time") {
   const spot = Number(stillOpen[0]?.currentPrice ?? p.last_price);
   const patch: any = { last_price: spot, last_pnl: r2(openPnl + realized), refs: { ...p.refs, done }, updated_at: new Date().toISOString() };
   const t1 = legs.find((l) => l.role === "t1"), t2open = stillOpen.find((x) => legs.some((l) => l.role === "t2" && l.id === String(x.id)));
-  if (!p.t1_hit && t1 && t1.id in done && done[t1.id] > 0 && t2open) {
-    patch.t1_hit = true; patch.stop = p.entry;
-    await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(t2open.id), stopLoss: roundDigits(p.entry, digits), takeProfit: roundDigits(p.target2, digits) }).catch(() => {});
-    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price.`);
-    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on MT5; the stop is now at the entry price. Result so far ${sgn(patch.last_pnl)}.`, patch.last_pnl);
-  } else if (p.t1_hit && t2open) {
-    const prog = (long ? spot - p.entry : p.entry - spot) / Math.abs(p.target2 - p.entry);
-    if (prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
-      await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(t2open.id), stopLoss: roundDigits(p.target1, digits), takeProfit: roundDigits(p.target2, digits) }).then(async () => { patch.stop = p.target1; await event(db, p.plan_id, p.id, `${p.label}: well on the way to target 2. Stop raised to target 1.`); }, () => {});
+  const t1Now = !p.t1_hit && !!t1 && t1.id in done && done[t1.id] > 0 && !!t2open;
+  if (t1Now) {
+    patch.t1_hit = true;
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on MT5. Viko now trails the stop to lock in more. Result so far ${sgn(patch.last_pnl)}.`, patch.last_pnl);
+  }
+  if (stillOpen.length) {
+    const { peak, t } = trailFor(p, spot, p.t1_hit || t1Now);
+    patch.peak = peak;
+    if (t) {
+      let moved = 0;
+      for (const x of stillOpen) await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(x.id), stopLoss: roundDigits(t.stop, digits), takeProfit: Number(x.takeProfit) || undefined }).then(() => { moved++; }, () => {});
+      if (moved) { patch.stop = t.stop; await event(db, p.plan_id, p.id, `${p.label}: stop-loss moved to ${fmt(t.stop)}: ${t.why}.`); }
     }
   }
   for (const x of stillOpen) if (!Number(x.stopLoss)) {
@@ -877,7 +928,7 @@ async function manageMt5(db: DB, p: any, endNow: boolean, why = "time") {
   }
   if (!stillOpen.length) {
     const total = realized;
-    const reason = endNow ? why : total > 0 ? (legs.some((l) => l.role === "t2" && (done[l.id] ?? 0) > 0) ? "target 2" : "target 1") : p.t1_hit ? "stop at entry" : "stop";
+    const reason = endNow ? why : legs.some((l) => l.role === "t2" && (done[l.id] ?? 0) > 0) && Math.abs(spot - p.target2) < Math.abs(spot - (patch.stop ?? p.stop)) ? "target 2" : closeReason({ ...p, stop: patch.stop ?? p.stop }, spot);
     Object.assign(patch, { status: "closed", closed_at: new Date().toISOString(), pnl: r2(total), last_pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(total)}.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)}`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} on about ${p.stake} USD (${reason}). MT5 ${p.broker_symbol}.`, r2(total));

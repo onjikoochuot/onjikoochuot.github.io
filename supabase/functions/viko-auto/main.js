@@ -1,23 +1,60 @@
+// supabase/functions/viko-auto/index.ts
 import { createClient } from "jsr:@supabase/supabase-js@2";
-const BROKERS = ["binance", "bybit", "mt5", "deriv"];
-const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-viko-key", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
-const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-class UserError extends Error {
+
+// supabase/functions/viko-auto/trail.ts
+function trailStop(x) {
+  const s = x.dir === "long" ? 1 : -1;
+  const e = x.entry * s, s0 = x.initialStop * s, cur = x.stop * s, t1 = x.target1 * s, t2 = x.target2 * s;
+  const px = x.price * s, pk = Math.max(x.peak * s, px);
+  const r1 = t1 - e;
+  if (!(r1 > 0) || ![e, s0, cur, t1, t2, px, pk].every(Number.isFinite)) return null;
+  const g = pk - e;
+  let cand = s0, why = "";
+  if (g >= 0.5 * r1 && e - 0.5 * (e - s0) > cand) {
+    cand = e - 0.5 * (e - s0);
+    why = "halfway to target 1, so the risk is cut in half";
+  }
+  if (g >= 0.8 * r1 && e > cand) {
+    cand = e;
+    why = "close to target 1, so the stop is now at the entry price and the trade can't lose";
+  }
+  if ((x.t1Hit || g >= r1) && e + 0.5 * g > cand) {
+    cand = e + 0.5 * g;
+    why = "past target 1, so the stop locks in half of the best gain so far";
+  }
+  if (t2 > e && g >= 0.6 * (t2 - e) && t1 > cand) {
+    cand = t1;
+    why = "well on the way to target 2, so the stop is at target 1";
+  }
+  cand = Math.min(cand, px - 0.25 * r1);
+  if (cand <= cur + 0.05 * r1) return null;
+  return { stop: cand * s, why, locksProfit: cand > e };
 }
-const TF_H = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
-const HORIZONS = {
+var nextPeak = (dir, peak, ...prices) => {
+  const all = [peak, ...prices].filter((v) => typeof v === "number" && Number.isFinite(v) && v > 0);
+  return all.length ? dir === "long" ? Math.max(...all) : Math.min(...all) : NaN;
+};
+
+// supabase/functions/viko-auto/index.ts
+var BROKERS = ["binance", "bybit", "mt5", "deriv"];
+var CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-viko-key", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+var json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+var UserError = class extends Error {
+};
+var TF_H = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
+var HORIZONS = {
   "24h": { h: 24, tfs: ["5m", "15m", "30m", "1h", "2h", "4h"], name: "24 hours" },
   "48h": { h: 48, tfs: ["15m", "30m", "1h", "2h", "4h"], name: "48 hours" },
   "72h": { h: 72, tfs: ["30m", "1h", "2h", "4h", "1d"], name: "72 hours" },
   "1w": { h: 168, tfs: ["1h", "2h", "4h", "1d"], name: "1 week" },
   "1m": { h: 720, tfs: ["4h", "1d", "1w"], name: "1 month" }
 };
-const RISK = { careful: 0.1, balanced: 0.2, bold: 0.35, max: 0.5 };
-const ALL_TFS = Object.keys(TF_H);
-const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
-const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, "0")).join("");
-const r2 = (x) => Math.round(x * 100) / 100;
-const fmt = (x) => Math.abs(x) >= 1e3 ? x.toFixed(2) : Math.abs(x) >= 1 ? x.toFixed(4) : x.toPrecision(5);
+var RISK = { careful: 0.1, balanced: 0.2, bold: 0.35, max: 0.5 };
+var ALL_TFS = Object.keys(TF_H);
+var UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
+var sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, "0")).join("");
+var r2 = (x) => Math.round(x * 100) / 100;
+var fmt = (x) => Math.abs(x) >= 1e3 ? x.toFixed(2) : Math.abs(x) >= 1 ? x.toFixed(4) : x.toPrecision(5);
 async function event(db, plan_id, position_id, message) {
   await db.from("viko_auto_events").insert({ plan_id, position_id, message });
 }
@@ -26,10 +63,9 @@ async function alert(db, kind, mode, title, body, pnl = null) {
   }, () => {
   });
 }
-const acct = (mode) => mode === "live" ? "Real money" : "Demo";
-const sgn = (x) => `${x >= 0 ? "+" : "\u2212"}${Math.abs(r2(x))}`;
-const brokerName = (b) => ({ binance: "Binance", deriv: "Deriv", bybit: "Bybit", mt5: "MT5" })[b] ?? "your connected brokers";
-const brokerCur = (b) => b === "binance" || b === "bybit" ? "USDT" : "USD";
+var acct = (mode) => mode === "live" ? "Real money" : "Demo";
+var sgn = (x) => `${x >= 0 ? "+" : "\u2212"}${Math.abs(r2(x))}`;
+var brokerName = (b) => ({ binance: "Binance", deriv: "Deriv", bybit: "Bybit", mt5: "MT5" })[b] ?? "your connected brokers";
 async function sourcePrice(id) {
   try {
     const [src, sym] = id.split(":");
@@ -43,7 +79,7 @@ async function sourcePrice(id) {
     return null;
   }
 }
-const BN_BASE = { demo: "https://demo-fapi.binance.com", live: "https://fapi.binance.com" };
+var BN_BASE = { demo: "https://demo-fapi.binance.com", live: "https://fapi.binance.com" };
 function bnCreds(mode) {
   const k = Deno.env.get(mode === "live" ? "BINANCE_LIVE_KEY" : "BINANCE_DEMO_KEY"), s = Deno.env.get(mode === "live" ? "BINANCE_LIVE_SECRET" : "BINANCE_DEMO_SECRET");
   return k && s ? { k, s } : null;
@@ -52,13 +88,13 @@ async function hmac(secret, msg) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return [...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-class BnError extends Error {
+var BnError = class extends Error {
   constructor(code, msg) {
     super(msg);
     this.code = code;
   }
   code;
-}
+};
 async function bn(mode, method, path, params = {}, signed = true) {
   const c = bnCreds(mode);
   if (signed && !c) throw new UserError(`Binance ${mode} is not connected: add BINANCE_${mode === "live" ? "LIVE" : "DEMO"}_KEY and BINANCE_${mode === "live" ? "LIVE" : "DEMO"}_SECRET in Supabase secrets.`);
@@ -85,7 +121,7 @@ async function bn(mode, method, path, params = {}, signed = true) {
   }
   return j;
 }
-const bnInfo = {};
+var bnInfo = {};
 async function bnSymbols(mode) {
   let c = bnInfo[mode];
   if (!c || Date.now() - c.at > 36e5) {
@@ -95,7 +131,7 @@ async function bnSymbols(mode) {
   }
   return c.syms;
 }
-const BN_MAP = {
+var BN_MAP = {
   "GC=F": "XAUUSDT",
   "SI=F": "XAGUSDT",
   "PL=F": "XPTUSDT",
@@ -129,13 +165,13 @@ function bnRules(sym, syms) {
   const f = (t) => s.filters.find((x) => x.filterType === t) ?? {};
   return { sym, tick: Number(f("PRICE_FILTER").tickSize), step: Number(f("MARKET_LOT_SIZE").stepSize) || Number(f("LOT_SIZE").stepSize), minQty: Number(f("LOT_SIZE").minQty), minNotional: Number(f("MIN_NOTIONAL").notional ?? 5) };
 }
-const dec = (x) => {
+var dec = (x) => {
   const s = String(x);
   return s.includes("e-") ? Number(s.split("e-")[1]) : (s.split(".")[1] ?? "").replace(/0+$/, "").length;
 };
-const floorTo = (x, step) => (Math.floor(x / step + 1e-9) * step).toFixed(dec(step));
-const roundTo = (x, tick) => (Math.round(x / tick) * tick).toFixed(dec(tick));
-const bnMark = async (mode, sym) => Number((await bn(mode, "GET", "/fapi/v1/premiumIndex", { symbol: sym }, false)).markPrice);
+var floorTo = (x, step) => (Math.floor(x / step + 1e-9) * step).toFixed(dec(step));
+var roundTo = (x, tick) => (Math.round(x / tick) * tick).toFixed(dec(tick));
+var bnMark = async (mode, sym) => Number((await bn(mode, "GET", "/fapi/v1/premiumIndex", { symbol: sym }, false)).markPrice);
 async function bnProtect(mode, sym, long, stop, t2, tick) {
   const exit = long ? "SELL" : "BUY";
   await bn(mode, "POST", "/fapi/v1/algoOrder", { algoType: "CONDITIONAL", symbol: sym, side: exit, type: "STOP_MARKET", triggerPrice: roundTo(stop, tick), closePosition: true, workingType: "MARK_PRICE", priceProtect: true });
@@ -154,19 +190,19 @@ async function bnClose(mode, sym) {
   const res = await bn(mode, "POST", "/fapi/v1/order", { symbol: sym, side: amt > 0 ? "SELL" : "BUY", type: "MARKET", quantity: String(Math.abs(amt)), reduceOnly: true, newOrderRespType: "RESULT" });
   return Number(res.avgPrice);
 }
-const BY_BASE = { demo: "https://api-demo.bybit.com", live: "https://api.bybit.com" };
+var BY_BASE = { demo: "https://api-demo.bybit.com", live: "https://api.bybit.com" };
 function byCreds(mode) {
   const M = mode === "live" ? "LIVE" : "DEMO";
   const k = Deno.env.get(`BYBIT_${M}_KEY`), sec = Deno.env.get(`BYBIT_${M}_SECRET`);
   return k && sec ? { k, s: sec } : null;
 }
-class ByError extends Error {
+var ByError = class extends Error {
   constructor(code, msg) {
     super(msg);
     this.code = code;
   }
   code;
-}
+};
 async function by(mode, method, path, params = {}, signed = true) {
   const c = byCreds(mode);
   if (signed && !c) throw new UserError(`Bybit ${mode} is not connected: add BYBIT_${mode === "live" ? "LIVE" : "DEMO"}_KEY and BYBIT_${mode === "live" ? "LIVE" : "DEMO"}_SECRET in Supabase secrets.`);
@@ -201,7 +237,7 @@ async function by(mode, method, path, params = {}, signed = true) {
   }
   return j.result;
 }
-let byInfo = null;
+var byInfo = null;
 async function bySymbols() {
   if (byInfo && Date.now() - byInfo.at < 36e5) return byInfo.syms;
   const syms = /* @__PURE__ */ new Map();
@@ -228,8 +264,8 @@ function byRules(sym, syms) {
   const x = syms.get(sym);
   return { sym, tick: Number(x.priceFilter.tickSize), step: Number(x.lotSizeFilter.qtyStep), minQty: Number(x.lotSizeFilter.minOrderQty), minNotional: Number(x.lotSizeFilter.minNotionalValue ?? 5) || 5, maxLev: Number(x.leverageFilter?.maxLeverage ?? 10) || 10 };
 }
-const byMark = async (sym) => Number((await by("live", "GET", "/v5/market/tickers", { category: "linear", symbol: sym }, false)).list?.[0]?.markPrice);
-const byPos = async (mode, sym) => ((await by(mode, "GET", "/v5/position/list", { category: "linear", symbol: sym })).list ?? []).find((x) => Number(x.size) > 0) ?? null;
+var byMark = async (sym) => Number((await by("live", "GET", "/v5/market/tickers", { category: "linear", symbol: sym }, false)).list?.[0]?.markPrice);
+var byPos = async (mode, sym) => ((await by(mode, "GET", "/v5/position/list", { category: "linear", symbol: sym })).list ?? []).find((x) => Number(x.size) > 0) ?? null;
 async function byStop(mode, sym, stop, tick) {
   await by(mode, "POST", "/v5/position/trading-stop", { category: "linear", symbol: sym, tpslMode: "Full", stopLoss: roundTo(stop, tick), slTriggerBy: "MarkPrice", positionIdx: 0 }).catch((e) => {
     if (!(e instanceof ByError) || e.code !== 34040) throw e;
@@ -274,7 +310,7 @@ async function mtTrade(mode, body) {
   if (!["TRADE_RETCODE_DONE", "TRADE_RETCODE_PLACED", "TRADE_RETCODE_DONE_PARTIAL", "TRADE_RETCODE_NO_CHANGES"].includes(j.stringCode)) throw new UserError(`MT5 refused: ${j.message ?? j.stringCode}`);
   return j;
 }
-const mtSymCache = {};
+var mtSymCache = {};
 async function mtSymbols(mode) {
   const c = mtSymCache[mode];
   if (c && Date.now() - c.at < 36e5) return c.list;
@@ -282,7 +318,7 @@ async function mtSymbols(mode) {
   mtSymCache[mode] = { at: Date.now(), list };
   return list;
 }
-const MT_MAP = {
+var MT_MAP = {
   "GC=F": ["XAUUSD", "GOLD"],
   "SI=F": ["XAGUSD", "SILVER"],
   "PL=F": ["XPTUSD"],
@@ -316,7 +352,7 @@ async function mtPrice(mode, sym) {
   const p = await mt(mode, "GET", `/symbols/${encodeURIComponent(sym)}/current-price`);
   return (Number(p.bid) + Number(p.ask)) / 2;
 }
-const mtSpec = (mode, sym) => mt(mode, "GET", `/symbols/${encodeURIComponent(sym)}/specification`);
+var mtSpec = (mode, sym) => mt(mode, "GET", `/symbols/${encodeURIComponent(sym)}/specification`);
 async function mtUsdPerLot(mode, cand, price, contractSize, list) {
   if (/^[A-Z]{6}$/.test(cand) && !/^(XAU|XAG|XPT|XPD|BTC|ETH)/.test(cand)) {
     const base = cand.slice(0, 3), quote = cand.slice(3);
@@ -329,8 +365,8 @@ async function mtUsdPerLot(mode, cand, price, contractSize, list) {
   }
   return contractSize * price;
 }
-const roundDigits = (x, d) => Number(x.toFixed(Math.max(0, Math.min(8, d))));
-const DV_MAP = {
+var roundDigits = (x, d) => Number(x.toFixed(Math.max(0, Math.min(8, d))));
+var DV_MAP = {
   "GC=F": ["frxXAUUSD"],
   "SI=F": ["frxXAGUSD"],
   "PL=F": ["frxXPTUSD"],
@@ -359,7 +395,7 @@ function derivCandidates(id) {
   if (s.endsWith("=X")) return ["frx" + s.replace("=X", "")];
   return DV_MAP[s] ?? [];
 }
-class Deriv {
+var Deriv = class _Deriv {
   ws;
   n = 1;
   pending = /* @__PURE__ */ new Map();
@@ -389,7 +425,7 @@ class Deriv {
     };
   }
   static async publicSession() {
-    const d = new Deriv();
+    const d = new _Deriv();
     await d.connect("wss://api.derivws.com/trading/v1/options/ws/public");
     return d;
   }
@@ -406,7 +442,7 @@ class Deriv {
     const o = await fetch(`https://api.derivws.com/trading/v1/options/accounts/${account.account_id}/otp`, { method: "POST", headers: h });
     const oj = await o.json().catch(() => ({}));
     if (!o.ok || !oj?.data?.url) throw new UserError(`Deriv would not open a trading session (${o.status}).`);
-    const d = new Deriv();
+    const d = new _Deriv();
     d.account = account;
     await d.connect(oj.data.url);
     return d;
@@ -454,8 +490,8 @@ class Deriv {
   poc(id) {
     return this.send({ proposal_open_contract: 1, contract_id: id }).then((m) => m.proposal_open_contract);
   }
-}
-let dvActive = null;
+};
+var dvActive = null;
 async function derivActive(d) {
   if (dvActive && Date.now() - dvActive.at < 36e5) return dvActive;
   const m = await d.send({ active_symbols: "brief", contract_type: ["MULTUP"] });
@@ -463,8 +499,8 @@ async function derivActive(d) {
   dvActive = { at: Date.now(), all, open: new Set([...all.values()].filter((s) => s.exchange_is_open && !s.is_trading_suspended).map((s) => s.underlying_symbol)) };
   return dvActive;
 }
-const dvSymbolFor = (id, act) => derivCandidates(id).find((c) => act.all.has(c)) ?? null;
-const allow = (cfg, b) => cfg.allowed ? cfg.allowed.includes(b) : cfg.broker === "both" || cfg.broker === b;
+var dvSymbolFor = (id, act) => derivCandidates(id).find((c) => act.all.has(c)) ?? null;
+var allow = (cfg, b) => cfg.allowed ? cfg.allowed.includes(b) : cfg.broker === "both" || cfg.broker === b;
 function readPicks(x) {
   if (!Array.isArray(x) || !x.length) return null;
   const out = [];
@@ -478,8 +514,9 @@ function readPicks(x) {
   }
   return out.length ? out : null;
 }
-const PICK_MIN_H = 24, PICK_MAX_H = 400 * 24;
-const pickHours = (picks) => Math.min(PICK_MAX_H, Math.max(PICK_MIN_H, ...picks.map((p) => p.expectBars * TF_H[p.tf] * 1.6)));
+var PICK_MIN_H = 24;
+var PICK_MAX_H = 400 * 24;
+var pickHours = (picks) => Math.min(PICK_MAX_H, Math.max(PICK_MIN_H, ...picks.map((p) => p.expectBars * TF_H[p.tf] * 1.6)));
 function readCfg(b) {
   const broker = ["binance", "deriv", "bybit", "mt5", "both"].includes(b.broker) ? b.broker : "binance";
   const alloc = ["each", "equal", "score", "custom"].includes(b.alloc) ? b.alloc : "equal";
@@ -497,7 +534,7 @@ function readCfg(b) {
   if (!RISK[cfg.risk]) cfg.risk = "balanced";
   return cfg;
 }
-const totalOf = (c) => c.alloc === "each" ? c.amount * c.count : c.alloc === "custom" && c.custom ? Math.max(c.amount, Object.values(c.custom).reduce((a, x) => a + x, 0)) : c.amount;
+var totalOf = (c) => c.alloc === "each" ? c.amount * c.count : c.alloc === "custom" && c.custom ? Math.max(c.amount, Object.values(c.custom).reduce((a, x) => a + x, 0)) : c.amount;
 function fresh(r, now) {
   const h = TF_H[r.tf];
   if (now - Date.parse(r.scanned_at) > Math.max(45 * 6e4, 2 * h * 36e5)) return false;
@@ -763,7 +800,7 @@ async function preview(db, cfg, exclude, want, d) {
   const pickH = cfg.picks ? pickHours(cfg.picks) : 0;
   return { limits: u.applies ? { money: L.money, trades: L.trades, loss: L.loss, used: u.money, count: u.trades, pnl: u.pnl, lossHit: u.lossHit } : null, trades: ok, skipped, horizon: cfg.picks ? "until the targets or stop are hit" : HORIZONS[cfg.horizon].name, closeBy: cfg.picks ? Date.now() + pickH * 36e5 : null, total: totalOf(cfg), diag, venues: { binance: v.bn ? v.bn.size : null, deriv: v.dv ? v.dv.open.size : null } };
 }
-const NO_LIMITS = { on: false, money: null, trades: null, loss: null, closeOnLoss: false, applies: "live", tz: "Africa/Nairobi" };
+var NO_LIMITS = { on: false, money: null, trades: null, loss: null, closeOnLoss: false, applies: "live", tz: "Africa/Nairobi" };
 async function getLimits(db) {
   const { data } = await db.from("viko_settings").select("v").eq("k", "limits").maybeSingle();
   return { ...NO_LIMITS, ...data?.v ?? {} };
@@ -947,7 +984,7 @@ async function brokerBalance(b, mode, d) {
   if (b === "mt5") return Number((await mt(mode, "GET", "/account-information")).freeMargin ?? 0);
   return Number((await d?.send({ balance: 1 }).catch(() => null))?.balance?.balance ?? d?.account.balance ?? Infinity);
 }
-const connectedTo = (b, mode) => b === "binance" ? !!bnCreds(mode) : b === "bybit" ? !!byCreds(mode) : b === "mt5" ? !!mtCreds(mode) : Deriv.connected();
+var connectedTo = (b, mode) => b === "binance" ? !!bnCreds(mode) : b === "bybit" ? !!byCreds(mode) : b === "mt5" ? !!mtCreds(mode) : Deriv.connected();
 function usableBrokers(cfg) {
   const want = cfg.broker === "both" ? BROKERS : [cfg.broker];
   return want.filter((b) => connectedTo(b, cfg.mode));
@@ -975,6 +1012,29 @@ async function fill(db, plan, d) {
   }
   return placed;
 }
+function trailFor(p, price, t1Hit) {
+  const peak = nextPeak(p.dir, p.peak ?? p.entry, price);
+  const t = trailStop({ dir: p.dir, entry: Number(p.entry), initialStop: Number(p.initial_stop ?? p.stop), stop: Number(p.stop), target1: Number(p.target1), target2: Number(p.target2), peak, price, t1Hit });
+  return { peak, t };
+}
+var closeReason = (p, exit) => {
+  const long = p.dir === "long", lockedProfit = long ? p.stop > p.entry : p.stop < p.entry, atEntry = Math.abs(p.stop - p.entry) / p.entry < 1e-6;
+  if (Math.abs(exit - p.stop) < Math.abs(exit - p.target2)) return lockedProfit ? "trailing stop (profit locked)" : atEntry ? "stop at entry" : p.stop !== p.initial_stop ? "trailing stop" : "stop";
+  return "target 2";
+};
+async function bnMoveStop(mode, sym, long, stop, tick) {
+  const algos = await bn(mode, "GET", "/fapi/v1/openAlgoOrders", { symbol: sym }).catch(() => []);
+  const old = algos.filter((o) => o.orderType === "STOP_MARKET");
+  for (const o of old) await bn(mode, "DELETE", "/fapi/v1/algoOrder", { algoId: o.algoId }).catch(() => {
+  });
+  try {
+    await bnProtect(mode, sym, long, stop, null, tick);
+  } catch (e) {
+    if (old[0]) await bnProtect(mode, sym, long, Number(old[0].triggerPrice), null, tick).catch(() => {
+    });
+    throw e;
+  }
+}
 async function manageBinance(db, p, endNow, why = "time") {
   const mode = p.mode, sym = p.broker_symbol, sc = p.refs?.scale ?? 1, tick = p.refs?.tick ?? 1e-4, long = p.dir === "long";
   const since = p.refs?.opened_ms ?? Date.parse(p.opened_at);
@@ -985,7 +1045,7 @@ async function manageBinance(db, p, endNow, why = "time") {
     await bn(mode, "DELETE", "/fapi/v1/algoOpenOrders", { symbol: sym }).catch(() => {
     });
     const pnl = await bnRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
-    const reason = pos ? why : Math.abs(exit - p.stop) < Math.abs(exit - p.target2) ? p.t1_hit ? "stop at entry" : "stop" : "target 2";
+    const reason = pos ? why : closeReason(p, exit);
     await db.from("viko_auto_positions").update({ status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(pnl), close_reason: reason, last_price: exit, last_pnl: r2(pnl), updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", p.id);
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${pnl >= 0 ? "+" : ""}${r2(pnl)} USDT.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(pnl)} USDT`, `${pnl >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(pnl))} USDT on ${p.stake} USDT (${reason}). Binance, exit ${fmt(exit)}.`, r2(pnl));
@@ -996,58 +1056,84 @@ async function manageBinance(db, p, endNow, why = "time") {
   const patch = { last_price: mark, last_pnl: r2(Number(pos.unRealizedProfit) + realized), updated_at: (/* @__PURE__ */ new Date()).toISOString() };
   const algos = await bn(mode, "GET", "/fapi/v1/openAlgoOrders", { symbol: sym }).catch(() => []);
   const hasStop = algos.some((o) => o.orderType === "STOP_MARKET");
-  const prog = (long ? mark - p.entry : p.entry - mark) / Math.abs(p.target2 - p.entry);
-  let newStop = null, msg = "";
-  if (!p.t1_hit && amt <= p.qty * 0.75) {
+  const t1Now = !p.t1_hit && amt <= p.qty * 0.75;
+  if (t1Now) {
     patch.t1_hit = true;
-    newStop = p.entry;
-    msg = `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price, so the rest can't lose.`;
-    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit; the stop is now at the entry price, so the rest can't lose. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl);
-  } else if (p.t1_hit && prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
-    newStop = p.target1;
-    msg = `${p.label}: well on the way to target 2. Stop raised to target 1 to lock in profit.`;
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit. Viko now trails the stop to lock in more as the price moves. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl);
   }
-  if (newStop !== null || !hasStop) {
-    const st = newStop ?? p.stop;
-    await bn(mode, "DELETE", "/fapi/v1/algoOpenOrders", { symbol: sym }).catch(() => {
-    });
-    await bnProtect(mode, sym, long, st * sc, p.target2 * sc, tick);
-    patch.stop = st;
-    await event(db, p.plan_id, p.id, msg || `${p.label}: the stop-loss was missing on Binance, so Viko put it back at ${fmt(st)}.`);
+  const { peak, t } = trailFor(p, mark, p.t1_hit || t1Now);
+  patch.peak = peak;
+  if (t) {
+    try {
+      await bnMoveStop(mode, sym, long, t.stop * sc, tick);
+      patch.stop = t.stop;
+      await event(db, p.plan_id, p.id, `${p.label}: stop-loss moved to ${fmt(t.stop)}: ${t.why}.`);
+    } catch (e) {
+      await event(db, p.plan_id, p.id, `${p.label}: couldn't move the stop on Binance (${e.message}); it stays at ${fmt(p.stop)}.`);
+    }
+  } else if (!hasStop) {
+    await bnProtect(mode, sym, long, p.stop * sc, p.t1_hit ? p.target2 * sc : null, tick);
+    await event(db, p.plan_id, p.id, `${p.label}: the stop-loss was missing on Binance, so Viko put it back at ${fmt(p.stop)}.`);
   }
   await db.from("viko_auto_positions").update(patch).eq("id", p.id);
 }
 async function manageDeriv(db, p, d, endNow, why = "time") {
   const cons = p.refs?.contracts ?? [];
-  let total = 0, allSold = true, spot = p.last_price;
-  const states = [];
-  for (const c of cons) {
-    let s = await d.poc(c.id).catch(() => null);
-    if (s && !s.is_sold && endNow) {
-      await d.send({ sell: c.id, price: 0 }).catch(() => {
-      });
-      s = await d.poc(c.id).catch(() => s);
+  const long = p.dir === "long";
+  const read = async () => {
+    let total2 = 0, allSold2 = true, spot2 = p.last_price;
+    const states2 = [];
+    for (const c of cons) {
+      const st = await d.poc(c.id).catch(() => null);
+      states2.push({ c, s: st });
+      if (st) {
+        total2 += Number(st.profit ?? 0);
+        spot2 = Number(st.current_spot ?? spot2);
+        if (!st.is_sold) allSold2 = false;
+      }
     }
-    states.push({ c, s });
-    if (s) {
-      total += Number(s.profit ?? 0);
-      spot = Number(s.current_spot ?? spot);
-      if (!s.is_sold) allSold = false;
+    return { total: total2, allSold: allSold2, spot: spot2, states: states2 };
+  };
+  let { total, allSold, spot, states } = await read();
+  const lockedProfit = long ? p.stop > p.entry : p.stop < p.entry;
+  const crossed = lockedProfit && (long ? spot <= p.stop : spot >= p.stop);
+  if ((endNow || crossed) && !allSold) {
+    for (const x of states) if (x.s && !x.s.is_sold) await d.send({ sell: x.c.id, price: 0 }).catch(() => {
+    });
+    ({ total, allSold, spot, states } = await read());
+    if (crossed && !endNow) {
+      endNow = true;
+      why = "trailing stop (profit locked)";
     }
   }
   const patch = { last_price: spot, last_pnl: r2(total), updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-  const t1 = states.find((x) => x.c.role === "t1"), t2 = states.find((x) => x.c.role === "t2");
-  if (!p.t1_hit && t1?.s?.is_sold && Number(t1.s.profit) > 0) {
+  const t1 = states.find((x) => x.c.role === "t1");
+  const t1Now = !p.t1_hit && !!t1?.s?.is_sold && Number(t1.s.profit) > 0;
+  if (t1Now) {
     patch.t1_hit = true;
-    patch.stop = p.entry;
-    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Deriv. Result so far ${sgn(total)} USD.`, r2(total));
-    if (t2?.s && !t2.s.is_sold) {
-      const ok = await d.send({ contract_update: 1, contract_id: t2.c.id, limit_order: { stop_loss: Math.max(0.1, r2(t2.c.stake * 0.02)) } }).then(() => true, () => false);
-      await event(db, p.plan_id, p.id, ok ? `${p.label}: target 1 hit, half taken as profit. The rest now risks almost nothing.` : `${p.label}: target 1 hit, half taken as profit.`);
-    } else await event(db, p.plan_id, p.id, `${p.label}: target 1 hit.`);
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Deriv. Viko now trails the stop to lock in more. Result so far ${sgn(total)} USD.`, r2(total));
+  }
+  if (!allSold) {
+    const { peak, t } = trailFor(p, spot, p.t1_hit || t1Now);
+    patch.peak = peak;
+    if (t) {
+      const lossFrac = t.locksProfit ? 0 : Math.abs(p.entry - t.stop) / p.entry;
+      let moved = 0;
+      for (const x of states) {
+        if (!x.s || x.s.is_sold) continue;
+        const mult = Number(x.s.multiplier ?? p.leverage ?? 1), stake = Number(x.c.stake ?? x.s.buy_price ?? 0);
+        const amount = Math.max(0.1, r2(stake * mult * lossFrac), r2(stake * 0.02));
+        if (await d.send({ contract_update: 1, contract_id: x.c.id, limit_order: { stop_loss: Math.min(amount, r2(stake * 0.95)) } }).then(() => true, () => false)) moved++;
+      }
+      patch.stop = t.stop;
+      await event(db, p.plan_id, p.id, `${p.label}: stop-loss moved to ${fmt(t.stop)}: ${t.why}.${t.locksProfit ? " Viko will close it if the price falls back to that level." : ""}${moved ? "" : " (Deriv didn't accept the change; Viko watches it instead.)"}`);
+    }
   }
   if (allSold) {
-    const reason = endNow ? why : total > 0 ? t2?.s && Number(t2.s.profit) > 0 ? "target 2" : "target 1" : "stop";
+    const t2 = states.find((x) => x.c.role === "t2");
+    const reason = endNow ? why : total > 0 ? t2?.s && Number(t2.s.profit) > 0 && Math.abs(spot - p.target2) < Math.abs(spot - p.stop) ? "target 2" : p.t1_hit ? closeReason(p, spot) : "target 1" : closeReason(p, spot);
     Object.assign(patch, { status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${total >= 0 ? "+" : ""}${r2(total)} USD.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)} USD`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} USD on ${p.stake} USD (${reason}). Deriv, last price ${fmt(spot)}.`, r2(total));
@@ -1064,7 +1150,7 @@ async function manageBybit(db, p, endNow, why = "time") {
     await by(mode, "POST", "/v5/order/cancel-all", { category: "linear", symbol: sym }).catch(() => {
     });
     const pnl = await byRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
-    const reason = pos ? why : Math.abs(exit - p.stop) < Math.abs(exit - p.target2) ? p.t1_hit ? "stop at entry" : "stop" : "target 2";
+    const reason = pos ? why : closeReason(p, exit);
     await db.from("viko_auto_positions").update({ status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(pnl), close_reason: reason, last_price: exit, last_pnl: r2(pnl), updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", p.id);
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(pnl)} USDT.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(pnl)} USDT`, `${pnl >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(pnl))} USDT on ${p.stake} USDT (${reason}). Bybit, exit ${fmt(exit)}.`, r2(pnl));
@@ -1073,22 +1159,23 @@ async function manageBybit(db, p, endNow, why = "time") {
   const size2 = Number(pos.size), mark = Number(pos.markPrice);
   const realized = p.t1_hit ? await byRealized(mode, sym, since).catch(() => 0) : 0;
   const patch = { last_price: mark, last_pnl: r2(Number(pos.unrealisedPnl) + realized), updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-  const prog = (long ? mark - p.entry : p.entry - mark) / Math.abs(p.target2 - p.entry);
-  let newStop = null, msg = "";
-  if (!p.t1_hit && size2 <= p.qty * 0.75) {
+  const t1Now = !p.t1_hit && size2 <= p.qty * 0.75;
+  if (t1Now) {
     patch.t1_hit = true;
-    newStop = p.entry;
-    msg = `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price.`;
-    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Bybit; the stop is now at the entry price. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl);
-  } else if (p.t1_hit && prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
-    newStop = p.target1;
-    msg = `${p.label}: well on the way to target 2. Stop raised to target 1.`;
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Bybit. Viko now trails the stop to lock in more. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl);
   }
-  if (newStop !== null || !Number(pos.stopLoss)) {
-    const st = newStop ?? p.stop;
-    await byStop(mode, sym, st, tick);
-    patch.stop = st;
-    await event(db, p.plan_id, p.id, msg || `${p.label}: the stop-loss was missing on Bybit, so Viko put it back at ${fmt(st)}.`);
+  const { peak, t } = trailFor(p, mark, p.t1_hit || t1Now);
+  patch.peak = peak;
+  if (t || !Number(pos.stopLoss)) {
+    const st = t ? t.stop : p.stop;
+    try {
+      await byStop(mode, sym, st, tick);
+      patch.stop = st;
+      await event(db, p.plan_id, p.id, t ? `${p.label}: stop-loss moved to ${fmt(st)}: ${t.why}.` : `${p.label}: the stop-loss was missing on Bybit, so Viko put it back at ${fmt(st)}.`);
+    } catch (e) {
+      await event(db, p.plan_id, p.id, `${p.label}: couldn't move the stop on Bybit (${e.message}).`);
+    }
   }
   await db.from("viko_auto_positions").update(patch).eq("id", p.id);
 }
@@ -1109,21 +1196,25 @@ async function manageMt5(db, p, endNow, why = "time") {
   const spot = Number(stillOpen[0]?.currentPrice ?? p.last_price);
   const patch = { last_price: spot, last_pnl: r2(openPnl + realized), refs: { ...p.refs, done }, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
   const t1 = legs.find((l) => l.role === "t1"), t2open = stillOpen.find((x) => legs.some((l) => l.role === "t2" && l.id === String(x.id)));
-  if (!p.t1_hit && t1 && t1.id in done && done[t1.id] > 0 && t2open) {
+  const t1Now = !p.t1_hit && !!t1 && t1.id in done && done[t1.id] > 0 && !!t2open;
+  if (t1Now) {
     patch.t1_hit = true;
-    patch.stop = p.entry;
-    await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(t2open.id), stopLoss: roundDigits(p.entry, digits), takeProfit: roundDigits(p.target2, digits) }).catch(() => {
-    });
-    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price.`);
-    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on MT5; the stop is now at the entry price. Result so far ${sgn(patch.last_pnl)}.`, patch.last_pnl);
-  } else if (p.t1_hit && t2open) {
-    const prog = (long ? spot - p.entry : p.entry - spot) / Math.abs(p.target2 - p.entry);
-    if (prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
-      await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(t2open.id), stopLoss: roundDigits(p.target1, digits), takeProfit: roundDigits(p.target2, digits) }).then(async () => {
-        patch.stop = p.target1;
-        await event(db, p.plan_id, p.id, `${p.label}: well on the way to target 2. Stop raised to target 1.`);
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on MT5. Viko now trails the stop to lock in more. Result so far ${sgn(patch.last_pnl)}.`, patch.last_pnl);
+  }
+  if (stillOpen.length) {
+    const { peak, t } = trailFor(p, spot, p.t1_hit || t1Now);
+    patch.peak = peak;
+    if (t) {
+      let moved = 0;
+      for (const x of stillOpen) await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(x.id), stopLoss: roundDigits(t.stop, digits), takeProfit: Number(x.takeProfit) || void 0 }).then(() => {
+        moved++;
       }, () => {
       });
+      if (moved) {
+        patch.stop = t.stop;
+        await event(db, p.plan_id, p.id, `${p.label}: stop-loss moved to ${fmt(t.stop)}: ${t.why}.`);
+      }
     }
   }
   for (const x of stillOpen) if (!Number(x.stopLoss)) {
@@ -1133,7 +1224,7 @@ async function manageMt5(db, p, endNow, why = "time") {
   }
   if (!stillOpen.length) {
     const total = realized;
-    const reason = endNow ? why : total > 0 ? legs.some((l) => l.role === "t2" && (done[l.id] ?? 0) > 0) ? "target 2" : "target 1" : p.t1_hit ? "stop at entry" : "stop";
+    const reason = endNow ? why : legs.some((l) => l.role === "t2" && (done[l.id] ?? 0) > 0) && Math.abs(spot - p.target2) < Math.abs(spot - (patch.stop ?? p.stop)) ? "target 2" : closeReason({ ...p, stop: patch.stop ?? p.stop }, spot);
     Object.assign(patch, { status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(total), last_pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(total)}.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)}`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} on about ${p.stake} USD (${reason}). MT5 ${p.broker_symbol}.`, r2(total));

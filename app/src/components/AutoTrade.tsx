@@ -169,7 +169,8 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
       <div className={`card auto-go ${live ? "live" : ""}`}>
         <ul className="auto-rules">
           <li>Every trade gets its stop-loss on the broker the moment it opens.</li>
-          <li>At target 1, half is taken as profit and the stop moves to the entry price{cfg.broker !== "deriv" ? "; on Binance it is later raised to target 1" : ""}.</li>
+          <li>The stop-loss trails the price every 5 minutes and only ever moves in your favour: risk halved when the trade is halfway to target 1, at your entry price (no loss possible) at 80% of the way, then locking in half of the best gain after target 1 and at least target 1 later on.</li>
+          <li>At target 1, half is taken as profit; the rest runs to target 2 or the trailing stop.</li>
           <li>Trades are skipped when big news is due within 3 hours or the news opinion is against them.</li>
           <li>Everything still open is closed when your {HORIZONS.find((h) => h[0] === cfg.horizon)![1]} are up. You can collect early any time.</li>
         </ul>
