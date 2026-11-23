@@ -3,7 +3,7 @@ import { fmt } from "../engine/analyze";
 import { paper, type PaperState, type PaperTrade } from "../lib/api";
 import { useQuotes } from "../lib/live";
 
-const money = (x: number) => `${x < 0 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (x: number) => `${x < -0.004 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const TFS = ["1h", "4h", "1d", "1w"];
 
 function unrealized(t: PaperTrade, price: number) {
@@ -43,7 +43,8 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
   const acc = st.account;
   const openPnl = st.open.reduce((s, t) => s + unrealized(t, live[t.symbol]?.price ?? t.last_price ?? t.entry) + 0, 0);
   const equity = Number(acc.balance) + openPnl;
-  const ret = (equity / Number(acc.starting_balance) - 1) * 100;
+  const rawRet = (equity / Number(acc.starting_balance) - 1) * 100;
+  const ret = Math.abs(rawRet) < 0.005 ? 0 : rawRet;
   const closed = st.closed;
   const wins = closed.filter((t) => Number(t.realized) > 0).length;
   const total = closed.reduce((s, t) => s + Number(t.realized), 0);
