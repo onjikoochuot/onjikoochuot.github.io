@@ -13,12 +13,14 @@ export const SCORES = [70, 75, 80, 85, 90, 95, 100];
 const NAME = new Map(CATALOG.map((c) => [c.id, c.name]));
 export const nameOf = (id: string, fallback = "") => NAME.get(id) ?? fallback;
 
-export const ready = (o: Opp) => o.setup.triggered && !o.setup.hardFail;
+const ahead = (o: Opp) => (o.setup.dir === "long" ? o.setup.target1 > o.price && o.setup.stop < o.price : o.setup.target1 < o.price && o.setup.stop > o.price);
+/** Tradeable now: entry signal fired, no must-pass rule broken, price still between stop and target 1, and at least 1.5× reward to risk. */
+export const ready = (o: Opp) => o.setup.triggered && !o.setup.hardFail && o.setup.verdict !== "NO TRADE" && o.setup.rr1 >= 1.5 && ahead(o);
 export const pickOfOpp = (o: Opp): AutoPick => ({ symbol: o.symbol, label: o.label, market: o.market, tf: o.tf, dir: o.setup.dir, score: o.setup.score, name: `${o.setup.name} (${o.setup.degree})`, stop: o.setup.stop, target1: o.setup.target1, target2: o.setup.target2, expectBars: o.setup.expectBars ?? 3 });
 const move = (o: Opp, to: number) => ((o.setup.dir === "long" ? to - o.setup.entry : o.setup.entry - to) / o.setup.entry) * 100;
 const pc = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
 const hrs = (h: number) => (h < 1 ? `${Math.max(5, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : h < 24 * 60 ? `${Math.round(h / 24)} days` : `${Math.round(h / 730)} mo`);
-const status = (o: Opp) => (o.setup.verdict === "APPROVED" ? ["Approved", "ok"] : ready(o) ? ["Ready", "watch"] : o.setup.hardFail ? ["Rule broken", "no"] : ["Waiting for entry", "no"]) as [string, string];
+const status = (o: Opp) => (o.setup.verdict === "APPROVED" && ready(o) ? ["Approved", "ok"] : ready(o) ? ["Ready", "watch"] : o.setup.hardFail ? ["Rule broken", "no"] : !o.setup.triggered ? ["Waiting for entry", "no"] : ahead(o) ? ["Reward too small", "no"] : ["Already moved", "no"]) as [string, string];
 
 /** Filters shared by High performers and Scan, remembered per page. */
 export type Filters = { market: Market | "All"; tf: Tf | "Any"; min: number; dir: "both" | "long" | "short"; readyOnly: boolean; bestPerMarket: boolean };
@@ -55,7 +57,7 @@ export function FilterBar({ f, set, showTf = true, counts }: { f: Filters; set: 
         <div className="seg" role="radiogroup" aria-label="Direction">{([["both", "Buy and sell"], ["long", "Buy only"], ["short", "Sell only"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={f.dir === v} className={f.dir === v ? "on" : ""} onClick={() => set({ dir: v })}>{l}</button>)}</div>
       </div>
       <div className="opp-checks">
-        <label className="check"><input type="checkbox" checked={f.readyOnly} onChange={(e) => set({ readyOnly: e.target.checked })} /> Only ones ready to trade now (entry signal fired)</label>
+        <label className="check"><input type="checkbox" checked={f.readyOnly} onChange={(e) => set({ readyOnly: e.target.checked })} /> Only ones ready to trade now</label>
         <label className="check"><input type="checkbox" checked={f.bestPerMarket} onChange={(e) => set({ bestPerMarket: e.target.checked })} /> One row per market (its best timeframe)</label>
       </div>
     </div>
@@ -113,8 +115,8 @@ export function OppList({ list, appKey, account, riskPct, onNeedKey, onOpen, onR
               {o.newsWarn && <p className="pick-warn opp-warn">Big news soon: {o.newsWarn.replace(/ is due .*/, "")}.</p>}
               <div className="opp-act">
                 <button className="btn" onClick={() => onOpen(o.symbol, o.tf)}>Chart</button>
-                <button className="btn" disabled={!can || !!busy} title={can ? "" : "The entry signal hasn't fired yet"} onClick={() => paperIt([o])}>Paper</button>
-                <button className="btn primary" disabled={!can} title={can ? "" : "The entry signal hasn't fired yet"} onClick={() => onReal([pickOfOpp(o)])}>Real money</button>
+                <button className="btn" disabled={!can || !!busy} title={can ? "" : "Not tradeable now: see the status under the score"} onClick={() => paperIt([o])}>Paper</button>
+                <button className="btn primary" disabled={!can} title={can ? "" : "Not tradeable now: see the status under the score"} onClick={() => onReal([pickOfOpp(o)])}>Real money</button>
               </div>
             </li>
           );
@@ -122,7 +124,7 @@ export function OppList({ list, appKey, account, riskPct, onNeedKey, onOpen, onR
       </ol>
       {chosen.length > 0 && (
         <div className="sel-bar" role="region" aria-label="Selected markets">
-          <span><b>{chosen.length}</b> selected{allReady ? "" : " (some aren't ready: their entry signal hasn't fired)"}</span>
+          <span><b>{chosen.length}</b> selected{allReady ? "" : " (some aren't tradeable now; untick them to continue)"}</span>
           <span className="pick-btns">
             <button className="btn" onClick={() => setSel({})}>Clear</button>
             <button className="btn" disabled={!allReady || !!busy} onClick={() => paperIt(chosen)}>{busy ? "Placing…" : "Paper trade all"}</button>

@@ -38,7 +38,7 @@ export default function HighPerformers(p: Common) {
         </div>
       </header>
       <FilterBar f={f} set={set} counts={counts} />
-      <p className="picks-note">The score is how many book rules and indicator checks agree, not the chance of winning. "Ready" means the entry signal has fired; "Approved" also passes the full 80% bar with at least 2× reward to risk.</p>
+      <p className="picks-note">The score is how many book rules and indicator checks agree, not the chance of winning. "Ready" means the entry signal has fired, the price is still between the stop and target 1, and the reward is at least 1.5× the risk. "Approved" also passes the full 80% bar with at least 2× reward to risk.</p>
       {err && <p className="err">{err}</p>}
       {loading ? <p className="muted">Loading the latest scan…</p> : (
         <>
