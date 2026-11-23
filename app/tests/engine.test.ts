@@ -53,4 +53,14 @@ describe("engine", () => {
     console.log("bars", long.length, "ms", Math.round(performance.now() - t0), "trades", r.trades.length, "win", r.winRate, "avgR", r.avgR);
     expect(r.barsTested).toBeGreaterThan(0);
   });
+  it("adds six indicator checks to every setup, and never approves when most indicators disagree", () => {
+    const a = analyze(c, "1d");
+    expect(a.setups.length).toBeGreaterThan(0);
+    for (const s of a.setups) {
+      const ind = s.checks.filter((k) => k.group === "Indicators");
+      expect(ind.map((k) => k.id).sort()).toEqual(["i-atr", "i-bb", "i-ema200", "i-ema2050", "i-macd", "i-rsi"]);
+      const used = ind.filter((k) => k.pass !== null);
+      if (used.length >= 4 && used.filter((k) => !k.pass).length > used.length / 2) expect(s.verdict).not.toBe("APPROVED");
+    }
+  });
 });

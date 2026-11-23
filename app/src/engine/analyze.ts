@@ -1,4 +1,4 @@
-import type { Analysis, Candle, Check, Dir, Pivot, Setup, Tf, WaveLabel, WyckoffRead } from "./types";
+import type { Analysis, Candle, Check, Dir, Indicators, Pivot, Setup, Tf, WaveLabel, WyckoffRead } from "./types";
 import { aggregate, computeIndicators, ema } from "./indicators";
 import { DEGREES, lineAt, monowaves } from "./waves";
 import { isSignificantBar, readWyckoff, waveVolume } from "./wyckoff";
@@ -24,7 +24,36 @@ const px = (x: number) => fmt(Math.abs(x));
 type Ctx = {
   c: Candle[]; atr: number[]; useVol: boolean; dir: Dir; // dir = real direction of the long-normalised setup
   wyBias: Dir | null; wy: WyckoffRead; htf: Dir | null; degreeName: string; degreeKey: string;
+  ind: Indicators; // computed on ctx.c, so for shorts these are the mirrored series and every check reads as a long
 };
+
+const IND = "Indicator filter (Viko policy, not from either book)";
+/** Classic indicators as a safety filter. They carry about a quarter of the score and can stop an approval, but never create one. */
+function indicatorChecks(ctx: Ctx, entry: number, stop: number): Check[] {
+  const { c, ind } = ctx;
+  const n = c.length - 1, close = c[n].c;
+  const ok = (x: number) => Number.isFinite(x);
+  const sign = ctx.dir === "long" ? 1 : -1; // show real prices in the text
+  const p = (x: number) => fmt(Math.abs(x));
+  const word = ctx.dir === "long" ? ["above", "below", "rising", "falling", "upper"] : ["below", "above", "falling", "rising", "lower"];
+  const rsiReal = ctx.dir === "long" ? ind.rsi[n] : 100 - ind.rsi[n];
+  const r = ind.rsi[n], hist = ind.hist[n], histPrev = ind.hist[n - 1];
+  const atr = ind.atr[n], stopDist = Math.abs(entry - stop);
+  return [
+    { id: "i-ema200", group: "Indicators", weight: 2, label: `Price is on the trade's side of the 200 EMA`, pass: ok(ind.ema200[n]) ? close > ind.ema200[n] : null,
+      detail: ok(ind.ema200[n]) ? `Price ${p(close * sign)} is ${close > ind.ema200[n] ? word[0] : word[1]} the 200 EMA at ${p(ind.ema200[n] * sign)}.` : "Not enough history for a 200 EMA.", source: IND },
+    { id: "i-ema2050", group: "Indicators", weight: 1, label: "Short-term average leads (20 EMA vs 50 EMA)", pass: ok(ind.ema50[n]) ? ind.ema20[n] > ind.ema50[n] : null,
+      detail: ok(ind.ema50[n]) ? `20 EMA ${p(ind.ema20[n] * sign)}, 50 EMA ${p(ind.ema50[n] * sign)}.` : "Not enough history.", source: IND },
+    { id: "i-rsi", group: "Indicators", weight: 1, label: "RSI has momentum but isn't stretched", pass: ok(r) ? r >= 45 && r <= 72 : null,
+      detail: ok(r) ? `RSI 14 is ${rsiReal.toFixed(1)}. ${r > 72 ? "Already stretched in the trade's direction: late entry." : r < 45 ? "Momentum still points the other way." : "Healthy."}` : "Not enough history.", source: IND },
+    { id: "i-macd", group: "Indicators", weight: 1, label: "MACD momentum agrees", pass: ok(hist) && ok(histPrev) ? hist > 0 || hist > histPrev : null,
+      detail: ok(hist) ? `MACD histogram is ${hist > 0 ? "on the trade's side" : "against the trade"} and ${hist > histPrev ? word[2] : word[3]} toward it.` : "Not enough history.", source: IND },
+    { id: "i-atr", group: "Indicators", weight: 1, label: "Stop-loss sits outside normal noise (at least ¾ ATR)", pass: ok(atr) && atr > 0 ? stopDist >= 0.75 * atr : null,
+      detail: ok(atr) ? `Stop is ${(stopDist / atr).toFixed(2)} ATR from the entry. ${stopDist < 0.75 * atr ? "Ordinary swings could hit it." : ""}` : "No ATR.", source: IND },
+    { id: "i-bb", group: "Indicators", weight: 1, label: `Not chasing: price is inside the ${word[4]} Bollinger band`, pass: ok(ind.bbU[n]) ? close <= ind.bbU[n] : null,
+      detail: ok(ind.bbU[n]) ? `Price ${p(close * sign)} vs the band at ${p(ind.bbU[n] * sign)}.` : "Not enough history.", source: IND },
+  ];
+}
 
 function trigger(ctx: Ctx, prevExtreme: Pivot, low: Pivot) {
   const { c, useVol } = ctx;
@@ -88,7 +117,11 @@ function finish(ctx: Ctx, baseIn: Omit<Setup, "score" | "hardFail" | "rr1" | "rr
   const checks: Check[] = [...base.checks,
     { id: "rr", group: "Risk", weight: 2, hard: false, label: `Reward is at least ${MIN_RR}× the risk to target 1`, pass: rr1 >= MIN_RR, detail: `Risk ${risk.toPrecision(5)} per unit, reward to target 1 is ${rr1.toFixed(2)}R (target 2: ${rr2.toFixed(2)}R).`, source: `${WY}, ch. 27 position management (app policy: ${MIN_RR}R minimum)` },
     { id: "trigger", group: "Risk", weight: 3, hard: false, label: "Entry trigger has fired", pass: base.triggered, detail: base.triggerNote, source: `${WY}, ch. 27 "significant bar" and "reversal of movement"` },
+    ...indicatorChecks(ctx, entry, base.stop),
   ];
+  const indAll = checks.filter((k) => k.group === "Indicators" && k.pass !== null);
+  const indAgainst = indAll.filter((k) => !k.pass).length;
+  const indVeto = indAll.length >= 4 && indAgainst > indAll.length / 2; // most indicators disagree: no approval
   const scored = checks.filter((k) => k.pass !== null);
   const total = scored.reduce((s, k) => s + k.weight, 0);
   const got = scored.filter((k) => k.pass).reduce((s, k) => s + k.weight, 0);
@@ -100,7 +133,8 @@ function finish(ctx: Ctx, baseIn: Omit<Setup, "score" | "hardFail" | "rr1" | "rr
   if (!base.triggered) reasons.push("The entry trigger has not fired yet.");
   if (rr1 < MIN_RR) reasons.push(`Reward to target 1 is only ${rr1.toFixed(2)}R.`);
   if (stale) reasons.push("Price has already travelled most of the move; the entry is stale.");
-  const verdict: Setup["verdict"] = !hardFail && score >= APPROVE_SCORE && base.triggered && rr1 >= MIN_RR && !stale ? "APPROVED" : !hardFail && score >= 55 && !stale ? "WATCH" : "NO TRADE";
+  if (indVeto) reasons.push(`${indAgainst} of ${indAll.length} indicators disagree (trend, momentum or a stretched price), so Viko won't approve it yet.`);
+  const verdict: Setup["verdict"] = !hardFail && score >= APPROVE_SCORE && base.triggered && rr1 >= MIN_RR && !stale && !indVeto ? "APPROVED" : !hardFail && score >= 55 && !stale ? "WATCH" : "NO TRADE";
   return { ...base, dir: ctx.dir, entry, checks, score, hardFail, rr1, rr2, verdict, reasons, plain: "", tip: "" };
 }
 
@@ -336,19 +370,20 @@ const HTF_FACTOR: Record<Tf, number> = { "5m": 12, "15m": 4, "30m": 8, "1h": 4, 
 
 export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[]): Analysis {
   const ind = computeIndicators(c);
+  const mc = mirror(c);
+  const indM = computeIndicators(mc);
   const wy = readWyckoff(c, ind.atr);
   const htf = htfTrend(htfCandles && htfCandles.length >= 30 ? htfCandles : aggregate(c, HTF_FACTOR[tf]));
   const useVol = wy.volumeUsable;
-  const mc = mirror(c);
   const setups: Setup[] = [];
   const pivotsByDegree: Record<string, Pivot[]> = {};
   for (const d of DEGREES) {
     const pvUp = monowaves(c, ind.atr, d.mult);
     pivotsByDegree[d.key] = pvUp;
     const base = { atr: ind.atr, useVol, wy, htf: htf.dir, degreeName: d.name, degreeKey: d.key };
-    for (const s of setupsForDegree({ ...base, c, dir: "long", wyBias: wy.bias }, pvUp)) setups.push(s);
+    for (const s of setupsForDegree({ ...base, c, ind, dir: "long", wyBias: wy.bias }, pvUp)) setups.push(s);
     const pvDn = monowaves(mc, ind.atr, d.mult);
-    for (const s of setupsForDegree({ ...base, c: mc, dir: "short", wyBias: wy.bias === null ? null : wy.bias === "long" ? "short" : "long", htf: htf.dir === null ? null : htf.dir === "long" ? "short" : "long" }, pvDn)) {
+    for (const s of setupsForDegree({ ...base, c: mc, ind: indM, dir: "short", wyBias: wy.bias === null ? null : wy.bias === "long" ? "short" : "long", htf: htf.dir === null ? null : htf.dir === "long" ? "short" : "long" }, pvDn)) {
       // un-mirror prices for shorts
       setups.push({ ...s, dir: "short", id: s.id + "-s", entry: -s.entry, stop: -s.stop, invalidation: -s.invalidation, target1: -s.target1, target2: -s.target2, labels: s.labels.map((l) => ({ ...l, p: -l.p })) });
     }

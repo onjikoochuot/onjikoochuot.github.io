@@ -18,7 +18,7 @@ const ago = (ms: number) => { const m = Math.round(ms / 60000); return m < 1 ? "
 const lean = (r?: PickRow) => (r && r.setup && !r.hard_fail && (r.score ?? 0) >= 55 ? r.dir : null);
 
 /** A row is still usable if it was scanned recently and its chart is still printing candles (market open). */
-function isFresh(r: PickRow, now: number) {
+export function isFresh(r: PickRow, now: number) {
   const h = TF_HOURS[r.tf];
   if (now - Date.parse(r.scanned_at) > Math.max(45 * 60000, 2 * h * 3600000)) return false;
   const quiet = r.tf === "1M" ? 40 * 86400 : r.tf === "1w" ? 10 * 86400 : r.tf === "1d" ? 4 * 86400 : 3 * h * 3600 + 20 * 60;

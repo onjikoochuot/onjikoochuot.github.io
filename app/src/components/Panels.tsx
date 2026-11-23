@@ -87,11 +87,12 @@ export function VerdictPanel({ symbol, tfLabel, analysis, setup, onPick, account
   );
 }
 
-const GROUPS: Check["group"][] = ["Neely: essential", "Neely: conditional", "Neely: confirmation", "Wyckoff", "Risk"];
+const GROUPS: Check["group"][] = ["Neely: essential", "Neely: conditional", "Neely: confirmation", "Wyckoff", "Indicators", "Risk"];
 const GROUP_NOTE: Record<Check["group"], string> = {
   "Neely: essential": "Rules the wave count must obey. A broken hard rule voids the setup.",
   "Neely: conditional": "Guidelines that raise or lower confidence in the count.",
   "Neely: confirmation": "Evidence after the fact that the pattern really finished.",
+  Indicators: "Trend, momentum and volatility filters (EMA, RSI, MACD, ATR, Bollinger). Not from the books: a safety check that can block an approval.",
   Wyckoff: "Is there a cause behind the move, and is volume telling the same story?",
   Risk: "Is there an entry now, and is the trade worth its risk?",
 };
@@ -147,8 +148,8 @@ export function ContextCards({ analysis }: { analysis: Analysis }) {
         <p className="ctx-note">{analysis.htfNote}</p>
       </section>
       <section className="card">
-        <h3><button className="link" onClick={() => setOpen(!open)} aria-expanded={open}>Supplementary indicators {open ? "▾" : "▸"}</button></h3>
-        <p className="ctx-note">From your toolkit brief. Shown for reference only; they don't count toward the verdict.</p>
+        <h3><button className="link" onClick={() => setOpen(!open)} aria-expanded={open}>Indicators {open ? "▾" : "▸"}</button></h3>
+        <p className="ctx-note">These now count: they make up about a quarter of the score, and if most of them disagree Viko won't approve the trade. See the "Indicators" rules in the checklist.</p>
         {open && <dl className="sup">{analysis.supplementary.map((s) => <div key={s.label}><dt>{s.label}</dt><dd className={`mono ${s.tone}`}>{s.value}</dd></div>)}</dl>}
       </section>
     </div>

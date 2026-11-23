@@ -1,60 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Candle, Setup, Tf } from "../engine/types";
-import { analyze, fmt } from "../engine/analyze";
+import type { Candle, Tf } from "../engine/types";
+import { fmt } from "../engine/analyze";
 import { backtest, type BacktestResult } from "../engine/backtest";
-import { getCandles, journal, type Instrument, type JournalRow } from "../lib/api";
-
-type Row = { inst: Instrument; best: Setup | null; last: number; err?: string };
-
-export function Scanner({ list, tf, onOpen }: { list: Instrument[]; tf: Tf; onOpen: (i: Instrument) => void }) {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [busy, setBusy] = useState(false);
-  const run = async () => {
-    setBusy(true); setRows([]);
-    const out: Row[] = [];
-    let idx = 0;
-    const worker = async () => {
-      while (idx < list.length) {
-        const inst = list[idx++];
-        try {
-          const c = await getCandles(inst.id, tf);
-          const a = analyze(c, tf);
-          out.push({ inst, best: a.best, last: a.last.c });
-        } catch (e) { out.push({ inst, best: null, last: NaN, err: (e as Error).message }); }
-        setRows([...out]);
-      }
-    };
-    await Promise.all([worker(), worker(), worker()]);
-    setBusy(false);
-  };
-  const order = { APPROVED: 0, WATCH: 1, "NO TRADE": 2 } as const;
-  const sorted = [...rows].sort((a, b) => (a.best ? order[a.best.verdict] : 3) - (b.best ? order[b.best.verdict] : 3) || (b.best?.score ?? 0) - (a.best?.score ?? 0));
-  const approved = rows.filter((r) => r.best?.verdict === "APPROVED").length;
-  return (
-    <section className="view">
-      <header className="view-head">
-        <div><h2>Scan the watchlist</h2><p>Runs the full rulebook on {list.length} markets on the {tf} timeframe and ranks them. Only setups at 80% or more with a fired trigger are approved.</p></div>
-        <button className="btn primary" onClick={run} disabled={busy}>{busy ? `Scanning ${rows.length}/${list.length}` : "Scan now"}</button>
-      </header>
-      {rows.length > 0 && <p className="scan-sum">{approved ? `${approved} approved setup${approved > 1 ? "s" : ""}.` : busy ? "Reading charts…" : "Nothing passes the 80% bar right now. That is the gate doing its job: no trade is a position."}</p>}
-      <table className="tbl">
-        <thead><tr><th>Market</th><th>Verdict</th><th>Setup</th><th className="r">Confluence</th><th className="r">Reward:risk</th><th className="r">Last</th></tr></thead>
-        <tbody>
-          {sorted.map((r) => (
-            <tr key={r.inst.id} onClick={() => onOpen(r.inst)} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onOpen(r.inst)}>
-              <td><b>{r.inst.label}</b><span className="sub">{r.inst.name}</span></td>
-              <td>{r.err ? <span className="tag no">Data error</span> : r.best ? <span className={`tag ${r.best.verdict === "APPROVED" ? "ok" : r.best.verdict === "WATCH" ? "watch" : "no"}`}>{r.best.verdict === "APPROVED" ? (r.best.dir === "long" ? "Buy" : "Sell") : r.best.verdict === "WATCH" ? "Watch" : "No trade"}</span> : <span className="tag no">No count</span>}</td>
-              <td>{r.err ? <span className="sub">{r.err}</span> : r.best ? `${r.best.dir === "long" ? "Long" : "Short"}: ${r.best.name}` : "–"}</td>
-              <td className="r mono">{r.best ? `${r.best.score}%` : "–"}</td>
-              <td className="r mono">{r.best ? r.best.rr1.toFixed(1) : "–"}</td>
-              <td className="r mono">{fmt(r.last)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
+import { getCandles, journal, type JournalRow } from "../lib/api";
 
 export function Backtest({ symbol, label, tf }: { symbol: string; label: string; tf: Tf }) {
   const [res, setRes] = useState<BacktestResult | null>(null);
@@ -174,8 +122,13 @@ export function Rulebook() {
       <p>Neely builds counts from monowaves plotted on cash data, then compacts them into larger patterns with Structure labels (chapters 3, 7 and 8). Viko finds monowaves with a volatility-scaled swing filter at three sizes and tests standard patterns only. It doesn't yet count complex corrections (double and triple threes), triangles or the advanced logic of chapters 9 to 12. When a market is in one of those, Viko says "no trade" rather than guess.</p>
       <h3>Wyckoff</h3>
       <p>Wyckoff rules (phases A–E, climaxes, springs and upthrusts, tests, effort and result, significant bars, entries and stops) come from Rubén Villahermosa, <i>The Wyckoff Methodology in Depth</i>, and cite the chapter on each line of the checklist.</p>
-      <h3>Supplementary indicators</h3>
-      <p>EMA 20/50/200, RSI, MACD, Bollinger Bands and ATR are displayed for reference. They don't affect the verdict, because they come from neither book.</p>
+      <h3>Indicators (safety filter)</h3>
+      <p>EMA 20/50/200, RSI, MACD, ATR and Bollinger Bands come from neither book, so they never create a trade on their own. They act as a safety filter on top of the book rules:</p>
+      <ul>
+        <li>Six checks: price on the trade's side of the 200 EMA (counts double), 20 EMA leading the 50 EMA, RSI between 45 and 72 (momentum without being stretched), MACD momentum agreeing, the stop at least ¾ ATR away (outside normal noise), and price not beyond the outer Bollinger band (not chasing).</li>
+        <li>Together they are about a quarter of the score, so a setup the indicators dislike scores lower.</li>
+        <li>Veto: if more than half of them disagree, the setup can't be approved, however well the waves and Wyckoff line up. It stays "Get ready" until they turn.</li>
+      </ul>
     </section>
   );
 }

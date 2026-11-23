@@ -8,7 +8,7 @@ import Chart, { type Indicators } from "./components/Chart";
 import NewsPanel from "./components/NewsPanel";
 import OrderTicket from "./components/OrderTicket";
 import { ContextCards, Ledger, VerdictPanel } from "./components/Panels";
-import { Backtest, Journal, Rulebook, Scanner } from "./components/Views";
+import { Backtest, Journal, Rulebook } from "./components/Views";
 import TipCard from "./components/TipCard";
 import Paper from "./components/Paper";
 import Markets from "./components/Markets";
@@ -16,15 +16,16 @@ import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
 import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
 import RealTrade from "./components/RealTrade";
+import HighPerformers, { LiveScan } from "./components/HighPerformers";
 import type { AutoPick } from "./lib/api";
 import Brokers from "./components/Brokers";
 import Guide from "./components/Guide";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
 const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly", "1M": "Monthly" };
-const VIEWS = ["analyse", "picks", "auto", "paper", "markets", "brokers", "scan", "backtest", "journal", "rules", "guide"] as const;
+const VIEWS = ["analyse", "picks", "top", "auto", "paper", "brokers", "scan", "markets", "backtest", "journal", "rules", "guide"] as const;
 type View = typeof VIEWS[number];
-const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", auto: "Auto-trade", brokers: "Brokers", guide: "How to use", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
+const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", top: "High performers", auto: "Auto-trade", brokers: "Brokers", guide: "How to use", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
 const viewFromHash = (): View => { const raw = location.hash.slice(1); const h = (raw === "binance" ? "brokers" : raw) as View; return VIEWS.includes(h) ? h : "analyse"; };
 
 const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -115,6 +116,7 @@ export default function App() {
     return () => { clearInterval(t); removeEventListener("focus", check); document.removeEventListener("visibilitychange", onVis); };
   }, []);
   useEffect(() => { const f = () => setView(viewFromHash()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []);
+  useEffect(() => { setRealPicks(null); setBnIdea(null); }, [view]); // a ticket never follows you to another page
   useEffect(() => save("watchlist2", list), [list]);
   useEffect(() => save("ind", ind), [ind]);
   useEffect(() => { save("inst", inst); save("tf", tf); }, [inst, tf]);
@@ -268,9 +270,7 @@ export default function App() {
                 <div className="trade-btns">
                   <button className="btn buy-btn" onClick={() => setTicket("long")} disabled={!lastPrice}>Buy</button>
                   <button className="btn sell-btn" onClick={() => setTicket("short")} disabled={!lastPrice}>Sell</button>
-                  {inst.market === "Crypto" && setup && !setup.hardFail && setup.verdict !== "NO TRADE" && (
-                    <button className="btn bn-btn" onClick={() => setBnIdea({ symbol: inst.id, label: inst.label, dir: setup.dir, entry: lastPrice ?? setup.entry, stop: setup.stop, target1: setup.target1, target2: setup.target2, setup: `${setup.name} (${setup.degree}), ${tf}`, score: setup.score })}>Trade on Binance</button>
-                  )}
+                  {canPaper && <button className="btn primary" onClick={realTrade} title="Viko places it on Binance or Deriv and manages the stop-loss and profit">Real money</button>}
                 </div>
                 <button className={`star big ${list.some((x) => x.id === inst.id) ? "on" : ""}`} onClick={() => toggle(inst)}>{list.some((x) => x.id === inst.id) ? "★ Watching" : "☆ Watch"}</button>
               </div>
@@ -298,7 +298,8 @@ export default function App() {
           {view === "guide" && <Guide go={go} />}
           {view === "markets" && <Markets list={list} onOpen={open} onToggle={toggle} />}
           {view === "paper" && <Paper appKey={jkey} onNeedKey={() => setSettingsOpen(true)} watchlist={list.map((x) => ({ id: x.id, label: x.label }))} onOpenMarket={openById} />}
-          {view === "scan" && <Scanner list={list} tf={tf} onOpen={open} />}
+          {view === "scan" && <LiveScan watchlist={list} appKey={jkey} account={account} riskPct={riskPct} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t); openById(id); }} onReal={setRealPicks} />}
+          {view === "top" && <HighPerformers appKey={jkey} account={account} riskPct={riskPct} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t); openById(id); }} onReal={setRealPicks} />}
           {view === "backtest" && <Backtest symbol={inst.id} label={inst.label} tf={tf} />}
           {view === "journal" && <Journal keyValue={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "rules" && <Rulebook />}
@@ -311,13 +312,13 @@ export default function App() {
             <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : v === "picks" ? "Picks" : v === "auto" ? "Auto" : VIEW_LABEL[v]}</span>
           </a>
         ))}
-        <button className={["guide", "brokers", "markets", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
+        <button className={["top", "guide", "brokers", "markets", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
       </nav>
 
       {moreOpen && (
         <div className="modal sheet-modal" role="dialog" aria-modal="true" aria-label="More" onClick={() => setMoreOpen(false)}>
           <div className="sheet bottom" onClick={(e) => e.stopPropagation()}>
-            {(["guide", "brokers", "markets", "scan", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
+            {(["top", "guide", "brokers", "scan", "markets", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
             <button className="sheet-item" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}>Settings</button>
           </div>
         </div>

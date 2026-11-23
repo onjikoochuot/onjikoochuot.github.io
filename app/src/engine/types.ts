@@ -7,7 +7,7 @@ export type Pivot = { i: number; p: number; kind: "H" | "L"; provisional?: boole
 /** One rule check. `hard` rules must pass or the setup is void. Weighted rules feed the confluence score. */
 export type Check = {
   id: string;
-  group: "Neely: essential" | "Neely: conditional" | "Neely: confirmation" | "Wyckoff" | "Risk";
+  group: "Neely: essential" | "Neely: conditional" | "Neely: confirmation" | "Wyckoff" | "Indicators" | "Risk";
   label: string;
   pass: boolean | null; // null = not applicable (excluded from score)
   hard?: boolean;
