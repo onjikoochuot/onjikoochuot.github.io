@@ -14,14 +14,16 @@ import Paper from "./components/Paper";
 import Markets from "./components/Markets";
 import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
-import { BinanceTicket, BinanceView, type BnTradeIdea } from "./components/Binance";
+import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
+import Brokers from "./components/Brokers";
+import Guide from "./components/Guide";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
 const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly", "1M": "Monthly" };
-const VIEWS = ["analyse", "picks", "auto", "paper", "markets", "binance", "scan", "backtest", "journal", "rules"] as const;
+const VIEWS = ["analyse", "picks", "auto", "paper", "markets", "brokers", "scan", "backtest", "journal", "rules", "guide"] as const;
 type View = typeof VIEWS[number];
-const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", auto: "Auto-trade", binance: "Binance", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
-const viewFromHash = (): View => { const h = location.hash.slice(1) as View; return VIEWS.includes(h) ? h : "analyse"; };
+const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", auto: "Auto-trade", brokers: "Brokers", guide: "How to use", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
+const viewFromHash = (): View => { const raw = location.hash.slice(1); const h = (raw === "binance" ? "brokers" : raw) as View; return VIEWS.includes(h) ? h : "analyse"; };
 
 const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const ICONS: Partial<Record<View | "more", string>> = {
@@ -160,7 +162,10 @@ export default function App() {
   const open = (i: Instrument) => { setInst(i); go("analyse"); };
   const openById = (id: string) => { const i = [...list, ...CATALOG].find((x) => x.id === id); if (i) open(i); };
   const toggle = (i: Instrument) => setList((l) => (l.some((x) => x.id === i.id) ? l.filter((x) => x.id !== i.id) : [...l, i]));
-  const quotes = useQuotes(useMemo(() => list.map((x) => x.id), [list]));
+  const [expanded, setExpanded] = useState<string[]>(() => store("railOpen", []));
+  useEffect(() => save("railOpen", expanded), [expanded]);
+  const railItems = (m: string) => { const mine = list.filter((x) => x.market === m); return expanded.includes(m) ? [...mine, ...CATALOG.filter((x) => x.market === m && !mine.some((y) => y.id === x.id))] : mine; };
+  const quotes = useQuotes(useMemo(() => [...new Set([...list.map((x) => x.id), ...CATALOG.filter((x) => expanded.includes(x.market)).map((x) => x.id)])], [list, expanded]));
 
   const saveSignal = async () => {
     if (!setup || !analysis) return;
@@ -223,15 +228,16 @@ export default function App() {
           <SymbolSearch onPick={(i) => { if (!list.some((x) => x.id === i.id)) setList([...list, i]); open(i); }} />
           <div className="rail-list">
             {MARKETS.map((m) => {
-              const items = list.filter((x) => x.market === m);
-              if (!items.length) return null;
+              const items = railItems(m);
+              const all = CATALOG.filter((x) => x.market === m).length;
+              const isOpen = expanded.includes(m);
               return (
                 <div key={m} className="rail-group">
-                  <h4>{m}</h4>
+                  <h4>{m}<button className="rail-more" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== m) : [...expanded, m])} aria-expanded={isOpen}>{isOpen ? "Show less" : `See all ${all}`}</button></h4>
                   <ul>{items.map((i) => {
                     const q = quotes[i.id];
                     return (
-                      <li key={i.id}><button className={i.id === inst.id ? "on" : ""} onClick={() => open(i)} aria-current={i.id === inst.id}>
+                      <li key={i.id}><button className={i.id === inst.id ? "on" : ""} onClick={() => open(i)} aria-current={i.id === inst.id} title={i.name}>
                         <b>{i.label}</b>
                         <span className="rq">{q ? <><span className="mono">{fmt(q.price)}</span><span className={`mono ${q.change >= 0 ? "bull" : "bear"}`}>{q.change >= 0 ? "+" : ""}{q.change.toFixed(1)}%</span></> : i.name}</span>
                       </button></li>
@@ -284,7 +290,8 @@ export default function App() {
           )}
           {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} onBinance={setBnIdea} />}
           {view === "auto" && <AutoTrade appKey={jkey} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t as Tf); openById(id); }} />}
-          {view === "binance" && <BinanceView appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
+          {view === "brokers" && <Brokers appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
+          {view === "guide" && <Guide go={go} />}
           {view === "markets" && <Markets list={list} onOpen={open} onToggle={toggle} />}
           {view === "paper" && <Paper appKey={jkey} onNeedKey={() => setSettingsOpen(true)} watchlist={list.map((x) => ({ id: x.id, label: x.label }))} onOpenMarket={openById} />}
           {view === "scan" && <Scanner list={list} tf={tf} onOpen={open} />}
@@ -300,13 +307,13 @@ export default function App() {
             <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : v === "picks" ? "Picks" : v === "auto" ? "Auto" : VIEW_LABEL[v]}</span>
           </a>
         ))}
-        <button className={["markets", "binance", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
+        <button className={["guide", "brokers", "markets", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
       </nav>
 
       {moreOpen && (
         <div className="modal sheet-modal" role="dialog" aria-modal="true" aria-label="More" onClick={() => setMoreOpen(false)}>
           <div className="sheet bottom" onClick={(e) => e.stopPropagation()}>
-            {(["markets", "binance", "scan", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
+            {(["guide", "brokers", "markets", "scan", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
             <button className="sheet-item" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}>Settings</button>
           </div>
         </div>

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { fmt } from "../engine/analyze";
-import { auto, save, store, type AutoCfg, type AutoEvent, type AutoHistory, type AutoPlan, type AutoPosition, type AutoPreview } from "../lib/api";
+import { auto, save, store, type AutoCfg, type AutoEvent, type AutoHistory, type AutoPlan, type AutoPosition, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
 
 type Tab = "start" | "running" | "results" | "connect";
 const HORIZONS: [AutoCfg["horizon"], string][] = [["24h", "24 hours"], ["48h", "48 hours"], ["72h", "72 hours"], ["1w", "1 week"], ["1m", "1 month"]];
 const STRICT = [65, 70, 75, 80, 85, 90, 95, 100];
-const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "lose about 10% of a trade's money if its stop is hit"], ["balanced", "Balanced", "about 20%"], ["bold", "Bold", "about 35%"]];
-const DEFAULT: AutoCfg = { broker: "binance", mode: "demo", amount: 100, count: 2, horizon: "48h", strict: 85, risk: "balanced" };
+const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "about 10% of that trade's money"], ["balanced", "Balanced", "about 20% of that trade's money"], ["bold", "Bold", "about 35% of that trade's money"], ["max", "Max profit", "about 50% of that trade's money (Binance leverage up to 20x, still never past the liquidation point)"]];
+const DEFAULT: AutoCfg = { broker: "both", mode: "demo", amount: 100, count: 3, horizon: "48h", strict: 75, risk: "balanced", alloc: "equal", custom: null, fallback: true };
 const cur = (broker: string) => (broker === "binance" ? "USDT" : "USD");
 const money = (x: number | null | undefined, c = "") => (x == null ? "–" : `${x >= 0 ? "" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`);
 const signed = (x: number | null | undefined, c = "") => (x == null ? "–" : `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`);
@@ -43,32 +43,51 @@ function Choice<T extends string | number>({ label, value, options, onChange, he
   );
 }
 
+const COUNTS = [1, 2, 3, 5, 10];
+const ALLOCS: [AutoCfg["alloc"], string, string][] = [
+  ["equal", "Split it equally", "Your amount is shared equally between the trades."],
+  ["each", "Same amount on each", "Every trade gets the full amount, so the total is amount × trades."],
+  ["score", "More on the strongest", "Viko gives more to trades with higher scores and more timeframes agreeing."],
+  ["custom", "I'll choose each", "Set the amount for every trade below the preview."],
+];
+const BROKERS: [AutoCfg["broker"], string][] = [["binance", "Binance"], ["deriv", "Deriv"], ["both", "Both (best fit)"]];
+const curOf = (b: string) => (b === "binance" ? "USDT" : "USD");
+
 function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void }) {
-  const [cfg, setCfg] = useState<AutoCfg>(() => store("autoCfg", DEFAULT));
-  const set = (p: Partial<AutoCfg>) => setCfg((c) => { const n = { ...c, ...p }; save("autoCfg", n); return n; });
+  const [cfg, setCfg] = useState<AutoCfg>(() => ({ ...DEFAULT, ...store<Partial<AutoCfg>>("autoCfg2", {}) }));
+  const set = (p: Partial<AutoCfg>) => setCfg((c) => { const n = { ...c, ...p }; save("autoCfg2", n); return n; });
   const [pv, setPv] = useState<AutoPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
-  const c = cur(cfg.broker);
+  const [custom, setCustom] = useState<Record<string, number>>({});
+  const [customCount, setCustomCount] = useState(!COUNTS.includes(cfg.count));
+  const c = curOf(cfg.broker);
+  const cfgKey = JSON.stringify({ ...cfg, custom: undefined });
 
   useEffect(() => {
     if (!(cfg.amount > 0)) return;
     let stop = false;
     setLoading(true); setErr("");
-    const t = setTimeout(() => auto.preview(appKey, cfg).then((p) => { if (!stop) setPv(p); }).catch((e) => { if (!stop) setErr((e as Error).message); }).finally(() => { if (!stop) setLoading(false); }), 500);
+    const t = setTimeout(() => auto.preview(appKey, { ...cfg, custom: null }).then((p) => { if (!stop) { setPv(p); setCustom(Object.fromEntries(p.trades.map((x) => [x.symbol, x.money]))); } }).catch((e) => { if (!stop) setErr((e as Error).message); }).finally(() => { if (!stop) setLoading(false); }), 600);
     return () => { stop = true; clearTimeout(t); };
-  }, [appKey, cfg]);
+  }, [appKey, cfgKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const live = cfg.mode === "live";
-  const totals = pv ? pv.trades.reduce((a, t) => ({ loss: a.loss + t.loss, p1: a.p1 + t.profit1, p2: a.p2 + t.profit2 }), { loss: 0, p1: 0, p2: 0 }) : null;
+  const trades = pv?.trades ?? [];
+  const moneyOf = (t: AutoPreviewTrade) => (cfg.alloc === "custom" ? custom[t.symbol] ?? t.money : t.money);
+  const scale = (t: AutoPreviewTrade) => moneyOf(t) / (t.money || 1);
+  const totals = trades.reduce((a, t) => ({ money: a.money + moneyOf(t), loss: a.loss + t.loss * scale(t), p1: a.p1 + t.profit1 * scale(t), p2: a.p2 + t.profit2 * scale(t) }), { money: 0, loss: 0, p1: 0, p2: 0 });
+  const planned = cfg.alloc === "each" ? cfg.amount * cfg.count : cfg.alloc === "custom" ? Math.max(cfg.amount, totals.money) : cfg.amount;
+  const notConnected = pv?.connected && (cfg.broker === "both" ? !pv.connected.binance && !pv.connected.deriv : !pv.connected[cfg.broker]);
+
   const go = async () => {
     setBusy(true); setErr(""); setDone("");
     try {
-      const r = await auto.start(appKey, cfg);
-      setDone(r.placed ? `Started. ${r.placed} trade${r.placed > 1 ? "s" : ""} placed${r.placed < cfg.count ? "; Viko will add the rest when they qualify" : ""}.` : "Started. Nothing qualifies yet, so Viko is watching and will enter as soon as a setup meets your bar.");
+      const r = await auto.start(appKey, { ...cfg, custom: cfg.alloc === "custom" ? custom : null });
+      setDone(r.placed ? `Started. ${r.placed} trade${r.placed > 1 ? "s" : ""} placed${r.placed < cfg.count ? "; Viko adds the rest as they qualify" : ""}.` : "Started. Nothing qualifies yet, so Viko is watching and will enter as soon as something does.");
       setTimeout(onStarted, 1400);
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
@@ -77,72 +96,85 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
   return (
     <>
       <div className="card auto-form">
-        <Choice label="Where" value={cfg.broker} options={[["binance", "Binance (crypto)"], ["deriv", "Deriv (forex, gold, crypto, indices)"]]} onChange={(broker) => set({ broker })} />
+        <Choice label="Where" value={cfg.broker} options={BROKERS} onChange={(broker) => set({ broker })} help={cfg.broker === "binance" ? "Crypto plus gold, silver, oil, gas, copper and about 200 US stocks and ETFs." : cfg.broker === "deriv" ? "Forex majors, gold, silver, Bitcoin and Ether as multipliers." : "Each trade goes to whichever connected broker offers that market."} />
         <Choice label="Account" value={cfg.mode} options={[["demo", "Demo (practice money)"], ["live", "Live (real money)"]]} onChange={(mode) => { set({ mode }); setAgree(false); }} />
         <div className="auto-field">
-          <span className="auto-label">Money to invest</span>
+          <span className="auto-label">{cfg.alloc === "each" ? "Money per trade" : "Money to invest"}</span>
           <span className="money-in"><input className="cur" value={c} readOnly aria-label="Currency" /><input type="number" min={1} step="any" inputMode="decimal" value={cfg.amount} onChange={(e) => set({ amount: Math.max(0, Number(e.target.value)) })} aria-label="Amount" /></span>
+          <small className="sub">Total planned: {money(planned, c)}</small>
         </div>
-        <Choice label="Number of trades" value={cfg.count} options={[[1, "1"], [2, "2"], [3, "3"]]} onChange={(count) => set({ count })} help={`${money(cfg.amount / cfg.count, c)} each`} />
+        <div className="auto-field">
+          <span className="auto-label">Number of trades</span>
+          <div className="seg" role="radiogroup" aria-label="Number of trades">
+            {COUNTS.map((n) => <button type="button" key={n} role="radio" aria-checked={!customCount && cfg.count === n} className={!customCount && cfg.count === n ? "on" : ""} onClick={() => { setCustomCount(false); set({ count: n }); }}>{n}</button>)}
+            <button type="button" className={customCount ? "on" : ""} onClick={() => setCustomCount(true)}>Other</button>
+          </div>
+          {customCount && <input className="auto-num" type="number" min={1} max={20} value={cfg.count} onChange={(e) => set({ count: Math.min(20, Math.max(1, Math.round(Number(e.target.value) || 1))) })} aria-label="How many trades" />}
+        </div>
+        <Choice label="How to share the money" value={cfg.alloc} options={ALLOCS.map(([v, l]) => [v, l] as [AutoCfg["alloc"], string])} onChange={(alloc) => set({ alloc })} help={ALLOCS.find((a) => a[0] === cfg.alloc)![2]} />
         <Choice label="Come back in" value={cfg.horizon} options={HORIZONS} onChange={(horizon) => set({ horizon })} />
-        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, s === 100 ? "100%" : `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help={cfg.strict < 80 ? "Below 80% is practice level: the books don't fully approve these setups. Viko still requires every must-pass rule, a fired entry signal and a reward at least twice the risk." : "Share of the book rules that must agree. 80% and up means the books approve the trade. Higher means fewer, cleaner trades."} />
+        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, s === 100 ? "100%" : `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help={cfg.strict < 80 ? "Below 80% is practice level: the books don't fully approve these, but every must-pass rule holds, the entry signal has fired and the reward is at least twice the risk." : "80% and up means the books approve the trade. Higher means fewer, cleaner trades."} />
         <Choice label="Risk" value={cfg.risk} options={RISKS.map(([v, l]) => [v, l] as [AutoCfg["risk"], string])} onChange={(risk) => set({ risk })} help={`Sets the leverage so a trade that hits its stop-loss loses ${RISKS.find((r) => r[0] === cfg.risk)![2]}.`} />
+        <label className="check auto-fallback"><input type="checkbox" checked={cfg.fallback} onChange={(e) => set({ fallback: e.target.checked })} /> If too few trades meet my bar, fill the empty slots with the next best setups (each still passes every must-pass rule and is marked "below your bar").</label>
       </div>
 
       <h3 className="pick-sec">What Viko would do now</h3>
-      {loading && <p className="muted">Checking the latest scan, live prices and news…</p>}
+      {notConnected && <p className="ctx-note warn">{BROKERS.find((b) => b[0] === cfg.broker)![1]} isn't connected for {cfg.mode} yet, so this is a preview. Connect it under Brokers to place these trades.</p>}
+      {loading && <p className="muted">Checking the latest scan, live broker prices and news…</p>}
       {err && <p className="err">{err}</p>}
       {pv && !loading && (
-        pv.trades.length === 0 ? (
+        trades.length === 0 ? (
           <div className="empty-pick">
-            <h3>Nothing meets {cfg.strict}% for {pv.horizon} right now</h3>
+            <h3>Nothing fits right now</h3>
             {pv.diag && <Why d={pv.diag} cfg={cfg} horizon={pv.horizon} onFix={set} />}
-            <p>You can still start. Viko will keep checking every 5 minutes for the first half of your window and enter as soon as a setup meets your bar. If none appears, your money is never used.</p>
+            <p>You can still start. Viko checks every 5 minutes for the first half of your window and enters as soon as something fits. If nothing does, your money is never used.</p>
             {pv.skipped.length > 0 && <p className="sub">{pv.skipped.join(" ")}</p>}
           </div>
         ) : (
           <>
             <div className="pick-grid">
-              {pv.trades.map((t) => (
-                <article key={t.symbol} className="card pick">
+              {trades.map((t) => (
+                <article key={t.symbol} className={`card pick ${t.below ? "dim" : ""}`}>
                   <div className="pick-head">
                     <div><h3>{t.label} <span className="sub">{t.tf} chart</span></h3><p className="sub">{t.setup}</p></div>
                     <div className="pick-badges"><span className={`tag ${t.dir === "long" ? "ok" : "sell"}`}>{t.dir === "long" ? "Buy" : "Sell"}</span><span className="pick-score mono">{t.score}%</span></div>
                   </div>
+                  <p className="auto-venue"><span className="tag no">{t.broker === "binance" ? "Binance" : "Deriv"} · {t.brokerSymbol}</span>{t.below && <span className="tag watch">Below your bar</span>}</p>
                   <dl className="pick-levels mono">
-                    <div><dt>Money</dt><dd>{money(t.money, c)}</dd></div>
-                    <div><dt>{cfg.broker === "binance" ? "Leverage" : "Multiplier"}</dt><dd>{t.leverage}x</dd></div>
-                    <div><dt>If stopped</dt><dd className="neg">{signed(-t.loss)}</dd></div>
-                    <div><dt>Target 1 / both</dt><dd className="pos-c">{signed(t.profit1)} / {signed(t.profit2)}</dd></div>
+                    <div><dt>Money</dt><dd>{cfg.alloc === "custom" ? <input className="auto-num sm" type="number" min={1} step="any" value={custom[t.symbol] ?? t.money} onChange={(e) => setCustom((m) => ({ ...m, [t.symbol]: Math.max(0, Number(e.target.value)) }))} aria-label={`Money for ${t.label}`} /> : money(t.money, curOf(t.broker))}</dd></div>
+                    <div><dt>{t.broker === "binance" ? "Leverage" : "Multiplier"}</dt><dd>{t.leverage}x</dd></div>
+                    <div><dt>If stopped</dt><dd className="neg">{signed(-t.loss * scale(t))}</dd></div>
+                    <div><dt>Min profit / full</dt><dd className="pos-c">{signed(t.profit1 * scale(t))} / {signed(t.profit2 * scale(t))}</dd></div>
                   </dl>
                   <p className="sub">{t.agree ? `${t.agree} other timeframe${t.agree > 1 ? "s" : ""} agree${t.agree > 1 ? "" : "s"}${t.against ? `, ${t.against} disagree` : ""}. ` : ""}Expected in roughly {hrs(t.hours[0])} to {hrs(t.hours[1])}.</p>
                   {t.opinion && <p className="auto-opinion"><b>News view ({t.stance}):</b> {t.opinion}</p>}
                 </article>
               ))}
             </div>
-            {totals && (
-              <div className="day-sum card">
-                <div><span className="sub">If every trade reaches target 1</span><b className="pos-c mono">{signed(totals.p1, c)}</b></div>
-                <div><span className="sub">If they run to target 2</span><b className="pos-c mono">{signed(totals.p2, c)}</b></div>
-                <div><span className="sub">If every stop-loss is hit</span><b className="neg mono">{signed(-totals.loss, c)}</b></div>
-              </div>
-            )}
-            {pv.trades.length < cfg.count && <p className="muted">Only {pv.trades.length} of {cfg.count} qualify now. Viko fills the rest later if one appears.</p>}
+            <div className="day-sum card">
+              <div><span className="sub">Money going in</span><b className="mono">{money(totals.money, c)}</b></div>
+              <div><span className="sub">Anticipated minimum profit (every trade reaches target 1)</span><b className="pos-c mono">{signed(totals.p1, c)}</b></div>
+              <div><span className="sub">If they run to target 2</span><b className="pos-c mono">{signed(totals.p2, c)}</b></div>
+              <div><span className="sub">If every stop-loss is hit</span><b className="neg mono">{signed(-totals.loss, c)}</b></div>
+            </div>
+            <p className="sub">These are targets, not promises: a trade that hits its stop-loss loses the amount shown in red instead.</p>
+            {trades.length < cfg.count && <p className="muted">{trades.length} of {cfg.count} trades can be placed now. Viko fills the rest during the first half of your window if more appear.</p>}
+            {pv.skipped.length > 0 && <p className="sub">Skipped: {pv.skipped.join(" ")}</p>}
           </>
         )
       )}
 
       <div className={`card auto-go ${live ? "live" : ""}`}>
         <ul className="auto-rules">
-          <li>Stop-loss is set on {cfg.broker === "binance" ? "Binance" : "Deriv"} the moment each trade opens.</li>
-          <li>At target 1, half is taken as profit and the stop moves to the entry price{cfg.broker === "binance" ? "; later it is raised to target 1" : ""}.</li>
-          <li>Trades are skipped when big news is due or the news mood is against them.</li>
+          <li>Every trade gets its stop-loss on the broker the moment it opens.</li>
+          <li>At target 1, half is taken as profit and the stop moves to the entry price{cfg.broker !== "deriv" ? "; on Binance it is later raised to target 1" : ""}.</li>
+          <li>Trades are skipped when big news is due within 3 hours or the news opinion is against them.</li>
           <li>Everything still open is closed when your {HORIZONS.find((h) => h[0] === cfg.horizon)![1]} are up. You can collect early any time.</li>
         </ul>
         {live && <label className="check bn-agree"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I understand this trades my real money and that I can lose it.</label>}
         {done && <p className="ok-msg">{done}</p>}
         <button className={`btn primary auto-btn ${live ? "sell-btn" : ""}`} disabled={busy || !(cfg.amount > 0) || (live && !agree)} onClick={go}>
-          {busy ? "Starting…" : live ? `Trade ${money(cfg.amount, c)} of real money` : `Start auto-trading ${money(cfg.amount, c)} (demo)`}
+          {busy ? "Starting…" : live ? `Trade ${money(planned, c)} of real money` : `Start auto-trading ${money(planned, c)} (demo)`}
         </button>
       </div>
     </>
@@ -150,24 +182,25 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
 }
 
 function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; cfg: AutoCfg; horizon: string; onFix: (p: Partial<AutoCfg>) => void }) {
-  const where = cfg.broker === "binance" ? "Binance (crypto only)" : "Deriv";
+  const where = cfg.broker === "binance" ? "Binance" : cfg.broker === "deriv" ? "Deriv" : "Binance or Deriv";
   const steps: [number, string][] = [
-    [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${[...new Map(d.examples.map((e) => [e.replace(/ \S+ \(\d+%\)$/, ""), e])).values()].join(", ")})` : ""}`],
+    [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${d.examples.join(", ")})` : ""}`],
     [d.time, `of them can reach target 1 within ${horizon}`],
     [d.broker, `of those can be traded on ${where}`],
-    [d.news, "have no big news due"],
+    [d.news, "have no big news in the next 3 hours"],
   ];
   const stop = steps.findIndex(([n]) => n === 0);
   const fixes: [string, Partial<AutoCfg>][] = [];
-  if (stop === 0 && cfg.strict > 65) fixes.push([`Try ${Math.max(65, cfg.strict - 10)}%+`, { strict: Math.max(65, cfg.strict - 10) }]);
-  if (stop === 1) { if (cfg.horizon !== "1m") fixes.push(["Try 1 month", { horizon: "1m" }]); if (cfg.horizon !== "24h") fixes.push(["Try 24 hours", { horizon: "24h" }]); }
-  if (stop === 2 && d.otherBroker > 0) fixes.push([`Try ${cfg.broker === "binance" ? "Deriv" : "Binance"} (${d.otherBroker} fit)`, { broker: cfg.broker === "binance" ? "deriv" : "binance" }]);
+  if (!cfg.fallback) fixes.push(["Allow next-best setups", { fallback: true }]);
+  if (cfg.strict > 65) fixes.push([`Try ${Math.max(65, cfg.strict - 10)}%+`, { strict: Math.max(65, cfg.strict - 10) }]);
+  if (cfg.broker !== "both") fixes.push(["Use both brokers", { broker: "both" }]);
+  if (cfg.horizon !== "72h") fixes.push(["Try 72 hours", { horizon: "72h" }]);
   return (
     <div className="auto-why">
       <p className="sub">Why: Viko narrowed today's picks step by step.</p>
       <ol>{steps.map(([n, t], i) => <li key={i} className={i === stop ? "stop" : i > stop && stop >= 0 ? "dim" : ""}><b className="mono">{n}</b> {t}</li>)}</ol>
       {d.opinionDropped > 0 && <p className="sub">{d.opinionDropped} more were dropped because the news opinion goes against them.</p>}
-      {fixes.length > 0 && <div className="auto-fixes">{fixes.map(([l, p]) => <button key={l} className="btn" onClick={() => onFix(p)}>{l}</button>)}</div>}
+      {fixes.length > 0 && <div className="auto-fixes">{fixes.slice(0, 3).map(([l, p]) => <button key={l} className="btn" onClick={() => onFix(p)}>{l}</button>)}</div>}
     </div>
   );
 }

@@ -214,7 +214,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 500; }
 @media (max-width: 760px) {
   .top { gap: 12px; padding: 0 12px; }
   .top .btn.ghost { padding: 6px 10px; }
-  .body { grid-template-columns: 1fr; }
+  .body { grid-template-columns: 1fr; align-content: start; }
   .rail { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--rule); padding: 10px 12px; }
   .rail-list { display: flex; gap: 6px; overflow-x: auto; margin-top: 10px; padding-bottom: 4px; scrollbar-width: none; }
   .rail-group, .rail-group ul, .rail-group li { display: contents; }
@@ -523,3 +523,20 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .auto-why li.dim { opacity: .45; }
 .auto-why b { margin-right: 4px; }
 .auto-fixes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.rail-group h4 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rail-more { background: none; border: 0; color: var(--brass); font: 500 12px var(--sans); cursor: pointer; padding: 0; text-transform: none; letter-spacing: 0; }
+.rail-more:hover { text-decoration: underline; }
+.auto-fallback { flex-direction: row !important; gap: 10px !important; align-items: flex-start; grid-column: 1 / -1; color: var(--foam) !important; font-size: 13.5px; }
+.auto-fallback input { margin-top: 3px; }
+.auto-num { background: var(--hull-2); border: 1px solid var(--rule); color: var(--foam); border-radius: 6px; padding: 6px 8px; width: 90px; font: 500 14px var(--mono); margin-top: 6px; }
+.auto-num.sm { width: 80px; margin: 0; padding: 2px 6px; }
+.auto-venue { margin: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.guide-toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 14px; font-size: 13.5px; }
+.guide-toc a { color: var(--brass); }
+.guide-card { margin-bottom: 12px; }
+.guide-card ul { margin: 6px 0 10px; padding-left: 20px; line-height: 1.65; }
+.brokers .view-head p { max-width: 75ch; }
+@media (max-width: 760px) {
+  .rail .rail-group h4 { display: flex; flex: 0 0 auto; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; margin: 0; padding: 0 6px 0 10px; white-space: nowrap; border-left: 1px solid var(--rule); }
+  .rail .rail-group:first-child h4 { border-left: 0; padding-left: 0; }
+}

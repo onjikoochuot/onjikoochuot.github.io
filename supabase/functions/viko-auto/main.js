@@ -11,7 +11,7 @@ const HORIZONS = {
   "1w": { h: 168, tfs: ["1h", "2h", "4h", "1d"], name: "1 week" },
   "1m": { h: 720, tfs: ["4h", "1d", "1w"], name: "1 month" }
 };
-const RISK = { careful: 0.1, balanced: 0.2, bold: 0.35 };
+const RISK = { careful: 0.1, balanced: 0.2, bold: 0.35, max: 0.5 };
 const ALL_TFS = Object.keys(TF_H);
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((x) => x.toString(16).padStart(2, "0")).join("");
@@ -386,7 +386,7 @@ async function size(cfg, r, d, v) {
   let lev;
   if (venue.broker === "binance") {
     const maxLev = Number(v.bn?.get(venue.sym)?.maxLeverage ?? 10) || 10;
-    lev = Math.max(1, Math.min(10, maxLev, Math.floor(target / stopPct)));
+    lev = Math.max(1, Math.min(cfg.risk === "max" ? 20 : 10, maxLev, Math.floor(target / stopPct)));
     if (lev * stopPct >= 0.8) lev = Math.floor(0.7 / stopPct);
     if (lev < 1) return { skip: `${r.label}'s stop-loss is too far away to trade safely.` };
   } else {

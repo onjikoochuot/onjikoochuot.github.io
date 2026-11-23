@@ -87,7 +87,7 @@ export function BinanceTicket({ idea, appKey, onClose, onNeedKey }: { idea: BnTr
 }
 
 /** The Binance screen: connection, balance, open positions, history and set-up steps. */
-export function BinanceView({ appKey, onNeedKey }: { appKey: string; onNeedKey: () => void }) {
+export function BinanceView({ appKey, onNeedKey, embedded }: { appKey: string; onNeedKey: () => void; embedded?: boolean }) {
   const [prefs, setPrefs] = useState<BnPrefs>(loadBnPrefs);
   const [st, setSt] = useState<BnStatus | null>(null);
   const [hist, setHist] = useState<BnHistory[]>([]);
@@ -116,9 +116,9 @@ export function BinanceView({ appKey, onNeedKey }: { appKey: string; onNeedKey: 
   };
 
   return (
-    <section className="view">
+    <section className={embedded ? "" : "view"}>
       <header className="view-head">
-        <div><h2>Binance</h2><p>Send Viko's trades to your Binance futures account with leverage, the stop-loss and both targets attached. Every order needs your tap to confirm.</p></div>
+        <div>{!embedded && <h2>Binance</h2>}<p>Binance futures with leverage: crypto plus gold, silver, oil, gas, copper and about 200 US stocks and ETFs. Manual orders need your tap; Auto-trade places its own.</p></div>
         <div className="seg big-seg" role="radiogroup" aria-label="Account">
           <button role="radio" aria-checked={prefs.mode === "demo"} className={prefs.mode === "demo" ? "on" : ""} onClick={() => update({ mode: "demo" })}>Demo</button>
           <button role="radio" aria-checked={prefs.mode === "live"} className={prefs.mode === "live" ? "on sell" : ""} onClick={() => setConfirmLive(true)}>Live</button>

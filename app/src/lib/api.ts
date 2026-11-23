@@ -59,6 +59,12 @@ export const CATALOG: Instrument[] = [
   // ---- more commodities ----
   M("PA=F", "Palladium", "Palladium futures"), M("HO=F", "Heating oil", "Heating oil futures"), M("RB=F", "Gasoline", "Gasoline futures"), M("ZS=F", "Soybeans", "Soybean futures"),
   M("SB=F", "Sugar", "Sugar futures"), M("CC=F", "Cocoa", "Cocoa futures"), M("CT=F", "Cotton", "Cotton futures"), M("LE=F", "Live cattle", "Live cattle futures"), M("OJ=F", "Orange juice", "Orange juice futures"),
+  // ---- v1: still more markets ----
+  C("JTO", "Jito"), C("ZRO", "LayerZero"), C("STRK", "Starknet"), C("EIGEN", "EigenLayer"), C("ETHFI", "ether.fi"), C("PENDLE", "Pendle"), C("AR", "Arweave"), C("THETA", "Theta"), C("EGLD", "MultiversX"), C("FLOW", "Flow"), C("XTZ", "Tezos"), C("EOS", "EOS"), C("NEO", "Neo"), C("IOTA", "IOTA"), C("KAVA", "Kava"), C("CHZ", "Chiliz"), C("ENJ", "Enjin"), C("GALA", "Gala"), C("APE", "ApeCoin"), C("DYDX", "dYdX"), C("GMX", "GMX"), C("SNX", "Synthetix"), C("COMP", "Compound"), C("1INCH", "1inch"), C("SUSHI", "SushiSwap"), C("YFI", "yearn.finance"), C("CAKE", "PancakeSwap"), C("ORDI", "ORDI"), C("BOME", "Book of Meme"), C("PEOPLE", "ConstitutionDAO"), C("NOT", "Notcoin"), C("DOGS", "Dogs"), C("NEIRO", "Neiro"), C("TURBO", "Turbo"), C("PNUT", "Peanut"), C("VIRTUAL", "Virtuals"), C("BERA", "Berachain"), C("KAITO", "Kaito"), C("LAYER", "Solayer"), C("PENGU", "Pudgy Penguins"), C("MOVE", "Movement"), C("ME", "Magic Eden"), C("W", "Wormhole"), C("QNT", "Quant"), C("MKR", "Maker"),
+  S("CRCL", "Circle"), S("CRWV", "CoreWeave"), S("RKLB", "Rocket Lab"), S("NBIS", "Nebius"), S("ASTS", "AST SpaceMobile"), S("IONQ", "IonQ"), S("MARA", "MARA Holdings"), S("HIMS", "Hims & Hers"), S("GME", "GameStop"), S("AMC", "AMC"), S("DKNG", "DraftKings"), S("NET", "Cloudflare"), S("DDOG", "Datadog"), S("CRWD", "CrowdStrike"), S("PANW", "Palo Alto Networks"), S("NOW", "ServiceNow"), S("AMAT", "Applied Materials"), S("LRCX", "Lam Research"), S("KLAC", "KLA"), S("TXN", "Texas Instruments"), S("MRVL", "Marvell"), S("ANET", "Arista"), S("APP", "AppLovin"), S("RDDT", "Reddit"), S("MELI", "MercadoLibre"), S("CVNA", "Carvana"), S("OKLO", "Oklo"), S("SMR", "NuScale"), S("CCJ", "Cameco"), S("MRNA", "Moderna"), S("AMGN", "Amgen"), S("MDT", "Medtronic"), S("CAT", "Caterpillar"), S("GEV", "GE Vernova"), S("ETN", "Eaton"), S("CEG", "Constellation Energy"), S("OXY", "Occidental"), S("IBKR", "Interactive Brokers"), S("BX", "Blackstone"), S("ACN", "Accenture"), S("EBAY", "eBay"), S("ZM", "Zoom"), S("TTWO", "Take-Two"), S("SNPS", "Synopsys"), S("TEAM", "Atlassian"), S("MDB", "MongoDB"), S("ZS", "Zscaler"), S("PATH", "UiPath"), S("NVO", "Novo Nordisk"), S("NOK", "Nokia"), S("HPE", "Hewlett Packard Enterprise"), S("CIEN", "Ciena"), S("WDC", "Western Digital"), S("GLW", "Corning"), S("ALAB", "Astera Labs"), S("TEM", "Tempus AI"), S("VKTX", "Viking Therapeutics"), S("IREN", "IREN"), S("HUT", "Hut 8"), S("CRDO", "Credo"),
+  I("SOXL", "SOXL", "Chip stocks 3x ETF"), I("TQQQ", "TQQQ", "Nasdaq 3x ETF"), I("SQQQ", "SQQQ", "Nasdaq -3x ETF"), I("SMH", "SMH", "Semiconductor ETF"), I("SOXX", "SOXX", "Semiconductor ETF (iShares)"), I("GDX", "GDX", "Gold miners ETF"), I("XBI", "XBI", "Biotech ETF"), I("EWZ", "EWZ", "Brazil ETF"), I("EWJ", "EWJ", "Japan ETF"), I("EWY", "EWY", "South Korea ETF"), I("UVXY", "UVXY", "Volatility 1.5x ETF"), I("BITO", "BITO", "Bitcoin futures ETF"), I("IGV", "IGV", "Software ETF"), I("URNM", "URNM", "Uranium miners ETF"),
+  F("EURNZD", "Euro / Kiwi"), F("GBPNZD", "Pound / Kiwi"), F("GBPCAD", "Pound / Loonie"), F("AUDCAD", "Aussie / Loonie"), F("AUDCHF", "Aussie / Franc"), F("NZDCAD", "Kiwi / Loonie"), F("CADCHF", "Loonie / Franc"), F("USDTHB", "US dollar / Baht"), F("USDPHP", "US dollar / Peso (PH)"), F("USDIDR", "US dollar / Rupiah"), F("USDKRW", "US dollar / Won"), F("USDBRL", "US dollar / Real"), F("EURZAR", "Euro / Rand"), F("GBPZAR", "Pound / Rand"), F("USDHKD", "US dollar / HK dollar"),
+  M("ALI=F", "Aluminium", "Aluminium futures"), M("ZO=F", "Oats", "Oat futures"), M("ZR=F", "Rough rice", "Rice futures"), M("GF=F", "Feeder cattle", "Feeder cattle futures"), M("HE=F", "Lean hogs", "Lean hog futures"), M("ZL=F", "Soybean oil", "Soybean oil futures"), M("ZM=F", "Soybean meal", "Soybean meal futures"),
 ];
 export const MARKETS: Market[] = ["Crypto", "Stocks", "Indices", "Forex", "Commodities"];
 const pick = (ids: string[]) => ids.map((id) => CATALOG.find((x) => x.id === id)!).filter(Boolean);
@@ -71,9 +77,15 @@ export const DEFAULT_WATCHLIST: Instrument[] = pick([
 export type Quote = { price: number; change: number };
 export async function getQuotes(ids: string[]): Promise<Record<string, Quote>> {
   if (!ids.length) return {};
-  const r = await fetch(`${API}/quotes?symbols=${encodeURIComponent(ids.join(","))}`);
-  const j = await r.json().catch(() => ({}));
-  return j.quotes ?? {};
+  // The server takes up to 120 symbols per call; larger lists are fetched in parallel chunks.
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 60) chunks.push(ids.slice(i, i + 60));
+  const parts = await Promise.all(chunks.map(async (c) => {
+    const r = await fetch(`${API}/quotes?symbols=${encodeURIComponent(c.join(","))}`);
+    const j = await r.json().catch(() => ({}));
+    return (j.quotes ?? {}) as Record<string, Quote>;
+  }));
+  return Object.assign({}, ...parts);
 }
 
 const cache = new Map<string, { at: number; data: Candle[] }>();
@@ -199,10 +211,13 @@ export const binance = {
 
 // ---------- Auto-trader (Binance or Deriv, managed on the server) ----------
 export const AUTO = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-auto";
-export type AutoCfg = { broker: "binance" | "deriv"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" };
-export type AutoPreviewTrade = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; agree: number; against: number; opinion: string; stance: string; setup: string; entry: number; stop: number; target1: number; target2: number; money: number; leverage: number; loss: number; profit1: number; profit2: number; hours: [number, number] };
-export type AutoDiag = { quality: number; time: number; broker: number; news: number; opinionDropped: number; otherBroker: number; examples: string[] };
-export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; money: number; horizon: string; diag?: AutoDiag };
+export type AutoAlloc = "each" | "equal" | "score" | "custom";
+export type AutoCfg = { broker: "binance" | "deriv" | "both"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" | "max"; alloc: AutoAlloc; custom?: Record<string, number> | null; fallback: boolean };
+export type AutoPreviewTrade = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; agree: number; against: number; opinion: string; stance: string; setup: string; broker: "binance" | "deriv"; brokerSymbol: string; below: boolean; entry: number; stop: number; target1: number; target2: number; money: number; leverage: number; loss: number; profit1: number; profit2: number; hours: [number, number] };
+export type AutoDiag = { quality: number; time: number; broker: number; news: number; opinionDropped: number; near: number; examples: string[] };
+export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; total: number; horizon: string; diag?: AutoDiag; venues?: { binance: number | null; deriv: number | null }; connected?: { binance: boolean; deriv: boolean } };
+export type DerivContract = { id: number; symbol: string; type: string; stake: number; profit: number; spot: number; entry: number; multiplier: number };
+export type DerivStatus = { mode: string; keysSet: boolean; connected: boolean; account?: string; currency?: string; balance?: number; contracts?: DerivContract[] };
 export type AutoPlan = { id: string; created_at: string; broker: string; mode: string; amount: number; count: number; horizon: string; strict: number; risk: string; status: string; ends_at: string; enter_until: string; closed_at: string | null };
 export type AutoPosition = { id: string; plan_id: string; broker: string; mode: string; symbol: string; label: string; tf: string; dir: string; setup: string; score: number; opinion: string | null; stake: number; leverage: number; entry: number; stop: number; initial_stop: number; target1: number; target2: number; t1_hit: boolean; status: string; opened_at: string; closed_at: string | null; pnl: number | null; close_reason: string | null; last_price: number | null; last_pnl: number | null };
 export type AutoEvent = { id: number; at: string; plan_id: string | null; message: string };
@@ -220,4 +235,7 @@ export const auto = {
   close: (key: string, b: { plan_id?: string; position_id?: string }) => afetch(key, "close", b),
   history: (key: string): Promise<{ rows: AutoHistory[] }> => afetch(key, "history"),
   connect: (key: string, broker: string, mode: string): Promise<{ ok: true; balance: number; currency: string; account?: string }> => afetch(key, "connect", undefined, `&broker=${broker}&mode=${mode}`),
+  derivStatus: (key: string, mode: string): Promise<DerivStatus> => afetch(key, "deriv-status", undefined, `&mode=${mode}`),
+  derivClose: (key: string, mode: string, contract_id: number) => afetch(key, "deriv-close", { mode, contract_id }),
+  markets: async (): Promise<{ total: number; binance_demo: number; binance_live: number; deriv?: number; deriv_symbols?: number }> => { const r = await fetch(`${AUTO}/markets?forceFunctionRegion=ap-south-1`); return r.json(); },
 };
