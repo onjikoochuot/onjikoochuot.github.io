@@ -85,7 +85,7 @@ export async function getCandles(symbol: string, tf: Tf, fresh = false): Promise
   const r = await fetch(`${API}/candles?symbol=${encodeURIComponent(symbol)}&tf=${tf}`);
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !Array.isArray(j.candles)) throw new Error(j.error ?? `Market data request failed (${r.status})`);
-  if (j.candles.length < 120) throw new Error("Not enough price history on this timeframe to read waves. Try a higher timeframe.");
+  if (j.candles.length < 120) throw new Error(tf === "1M" || tf === "1w" ? `This market doesn't have enough ${tf === "1M" ? "monthly" : "weekly"} history yet to read waves (${j.candles.length} candles). Try a ${tf === "1M" ? "weekly" : "daily"} chart.` : "Not enough price history on this timeframe to read waves. Try a higher timeframe.");
   cache.set(key, { at: Date.now(), data: j.candles });
   return j.candles;
 }
