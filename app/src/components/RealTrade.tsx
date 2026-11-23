@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { fmt } from "../engine/analyze";
+import { BrokerSelect, brokerLabel, curFor } from "../lib/brokers";
 import { auto, save, store, type AutoCfg, type AutoPick, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
 
-const BROKERS: [AutoCfg["broker"], string][] = [["both", "Best fit"], ["binance", "Binance"], ["deriv", "Deriv"]];
 const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "10%"], ["balanced", "Balanced", "20%"], ["bold", "Bold", "35%"], ["max", "Max profit", "50%"]];
 const SPLITS: [AutoCfg["alloc"], string, string][] = [
   ["equal", "Split it equally", "Your amount is shared equally between the trades."],
@@ -11,7 +11,7 @@ const SPLITS: [AutoCfg["alloc"], string, string][] = [
 ];
 type Saved = { broker: AutoCfg["broker"]; mode: AutoCfg["mode"]; amount: number; risk: AutoCfg["risk"]; alloc: AutoCfg["alloc"] };
 const DEF: Saved = { broker: "both", mode: "live", amount: 50, risk: "balanced", alloc: "equal" };
-const curOf = (b: string) => (b === "binance" ? "USDT" : "USD");
+const curOf = curFor;
 const signed = (x: number, c = "") => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`;
 const when = (ms: number) => {
   const d = new Date(ms), far = ms - Date.now() > 45 * 86400000;
@@ -43,10 +43,10 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
   }, [appKey, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trades = pv?.trades ?? [];
-  const c = trades.length && trades.every((t) => t.broker === "deriv") ? "USD" : s.broker === "deriv" ? "USD" : "USDT";
+  const c = trades.length ? (trades.every((t) => curOf(t.broker) === "USD") ? "USD" : "USDT") : s.broker === "both" ? "USDT" : curOf(s.broker);
   const tot = trades.reduce((a, t) => ({ money: a.money + t.money, loss: a.loss + t.loss, p1: a.p1 + t.profit1, p2: a.p2 + t.profit2, h0: Math.max(a.h0, t.hours[0]), h1: Math.max(a.h1, t.hours[1]) }), { money: 0, loss: 0, p1: 0, p2: 0, h0: 0, h1: 0 });
   const now = Date.now();
-  const notConnected = pv?.connected && (s.broker === "both" ? !pv.connected.binance && !pv.connected.deriv : !pv.connected[s.broker]);
+  const notConnected = pv?.connected && (s.broker === "both" ? !Object.values(pv.connected).some(Boolean) : !pv.connected[s.broker]);
 
   const go = async () => {
     setBusy(true); setErr("");
@@ -78,14 +78,15 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
                 <span className="money-in"><input className="cur" value={c} readOnly aria-label="Currency" /><input type="number" min={1} step="any" inputMode="decimal" autoFocus value={s.amount || ""} onChange={(e) => set({ amount: Math.max(0, Number(e.target.value)) })} aria-label="Amount" /></span>
               </label>
               <Seg label="Account" value={s.mode} options={[["live", "Real money"], ["demo", "Demo"]]} onChange={(mode) => { set({ mode }); setAgree(false); }} />
-              <Seg label="Broker" value={s.broker} options={BROKERS} onChange={(broker) => set({ broker })} />
+              <BrokerSelect value={s.broker} onChange={(broker) => set({ broker })} />
               {many && <Seg label="Share the money" value={s.alloc} options={SPLITS.map(([v, l]) => [v, l] as [AutoCfg["alloc"], string])} onChange={(alloc) => set({ alloc })} />}
               <Seg label="Risk" value={s.risk} options={RISKS.map(([v, l]) => [v, l] as [AutoCfg["risk"], string])} onChange={(risk) => set({ risk })} help={`Leverage is set so hitting the stop-loss loses about ${RISKS.find((r) => r[0] === s.risk)![2]} of the money (less if the stop is far away, never past liquidation).`} />
             </div>
 
-            {notConnected && <p className="ctx-note warn">{s.broker === "both" ? "No broker" : BROKERS.find((b) => b[0] === s.broker)![1]} is connected for {s.mode === "live" ? "real money" : "demo"} yet, so you can see the plan but not place it. Connect under Brokers.</p>}
+            {notConnected && <p className="ctx-note warn">{s.broker === "both" ? "No broker" : brokerLabel(s.broker)} is connected for {s.mode === "live" ? "real money" : "demo"} yet, so you can see the plan but not place it. Connect under Brokers.</p>}
             {loading && <p className="muted">Getting live broker prices…</p>}
             {err && <p className="err">{err}</p>}
+            {pv?.limits && !loading && <p className={`sub ${pv.limits.lossHit ? "neg" : ""}`}>Daily limits today: {pv.limits.used.toFixed(2)}{pv.limits.money != null ? ` of ${pv.limits.money}` : ""} used in {pv.limits.count} trade{pv.limits.count === 1 ? "" : "s"}{pv.limits.trades != null ? ` (most ${pv.limits.trades})` : ""}, result {pv.limits.pnl >= 0 ? "+" : "−"}{Math.abs(pv.limits.pnl).toFixed(2)}{pv.limits.loss != null ? ` (stop at −${pv.limits.loss})` : ""}. Change them under Auto-trade.</p>}
             {pv && !loading && trades.length === 0 && <p className="err">{pv.skipped.join(" ") || "This can't be placed right now."}</p>}
             {pv && !loading && trades.length > 0 && (
               <>

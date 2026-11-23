@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+const BROKERS = ["binance", "bybit", "mt5", "deriv"];
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-viko-key", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 class UserError extends Error {
@@ -20,7 +21,15 @@ const fmt = (x) => Math.abs(x) >= 1e3 ? x.toFixed(2) : Math.abs(x) >= 1 ? x.toFi
 async function event(db, plan_id, position_id, message) {
   await db.from("viko_auto_events").insert({ plan_id, position_id, message });
 }
-const brokerName = (b) => b === "binance" ? "Binance" : b === "deriv" ? "Deriv" : "Binance + Deriv";
+async function alert(db, kind, mode, title, body, pnl = null) {
+  await db.from("viko_alerts").insert({ kind, mode, title, body, pnl }).then(() => {
+  }, () => {
+  });
+}
+const acct = (mode) => mode === "live" ? "Real money" : "Demo";
+const sgn = (x) => `${x >= 0 ? "+" : "\u2212"}${Math.abs(r2(x))}`;
+const brokerName = (b) => ({ binance: "Binance", deriv: "Deriv", bybit: "Bybit", mt5: "MT5" })[b] ?? "your connected brokers";
+const brokerCur = (b) => b === "binance" || b === "bybit" ? "USDT" : "USD";
 async function sourcePrice(id) {
   try {
     const [src, sym] = id.split(":");
@@ -145,6 +154,182 @@ async function bnClose(mode, sym) {
   const res = await bn(mode, "POST", "/fapi/v1/order", { symbol: sym, side: amt > 0 ? "SELL" : "BUY", type: "MARKET", quantity: String(Math.abs(amt)), reduceOnly: true, newOrderRespType: "RESULT" });
   return Number(res.avgPrice);
 }
+const BY_BASE = { demo: "https://api-demo.bybit.com", live: "https://api.bybit.com" };
+function byCreds(mode) {
+  const M = mode === "live" ? "LIVE" : "DEMO";
+  const k = Deno.env.get(`BYBIT_${M}_KEY`), sec = Deno.env.get(`BYBIT_${M}_SECRET`);
+  return k && sec ? { k, s: sec } : null;
+}
+class ByError extends Error {
+  constructor(code, msg) {
+    super(msg);
+    this.code = code;
+  }
+  code;
+}
+async function by(mode, method, path, params = {}, signed = true) {
+  const c = byCreds(mode);
+  if (signed && !c) throw new UserError(`Bybit ${mode} is not connected: add BYBIT_${mode === "live" ? "LIVE" : "DEMO"}_KEY and BYBIT_${mode === "live" ? "LIVE" : "DEMO"}_SECRET in Supabase secrets.`);
+  let url = (signed ? BY_BASE[mode] : BY_BASE.live) + path, body, payload = "";
+  if (method === "GET") {
+    payload = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
+    if (payload) url += `?${payload}`;
+  } else {
+    body = JSON.stringify(params);
+    payload = body;
+  }
+  const headers = { "Content-Type": "application/json" };
+  if (signed) {
+    const ts = String(Date.now());
+    Object.assign(headers, { "X-BAPI-API-KEY": c.k, "X-BAPI-TIMESTAMP": ts, "X-BAPI-RECV-WINDOW": "5000", "X-BAPI-SIGN": await hmac(c.s, ts + c.k + "5000" + payload) });
+  }
+  const r = await fetch(url, { method, headers, body });
+  const text = await r.text();
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    j = { retCode: r.status, retMsg: text.replace(/<[^>]+>/g, " ").trim().slice(0, 160) };
+  }
+  if (r.status === 403 || r.status === 451) throw new UserError("Bybit refused this server's location. Bybit can't be used from here; use Binance, MT5 or Deriv.");
+  if (!r.ok || j.retCode !== 0) {
+    const code = Number(j.retCode ?? r.status);
+    if ([10003, 10004, 10005, 33004].includes(code)) throw new UserError(`Bybit rejected the API key. Use a ${mode === "demo" ? "Demo Trading" : "real-account"} key with Contract (derivatives) trading switched on.`);
+    if (code === 110007 || code === 110004 || code === 110012) throw new UserError("Not enough balance in your Bybit account for this trade.");
+    if (code === 10001 && /position idx/i.test(j.retMsg ?? "")) throw new UserError("Switch Bybit's position mode to One-Way (Derivatives settings), then try again.");
+    throw new ByError(code, `Bybit: ${j.retMsg ?? text.slice(0, 120)} (${code})`);
+  }
+  return j.result;
+}
+let byInfo = null;
+async function bySymbols() {
+  if (byInfo && Date.now() - byInfo.at < 36e5) return byInfo.syms;
+  const syms = /* @__PURE__ */ new Map();
+  let cursor = "";
+  for (let i = 0; i < 5; i++) {
+    const res = await by("live", "GET", "/v5/market/instruments-info", { category: "linear", limit: 1e3, ...cursor ? { cursor } : {} }, false);
+    for (const x of res.list ?? []) if (x.status === "Trading" && x.quoteCoin === "USDT" && x.contractType === "LinearPerpetual") syms.set(x.symbol, x);
+    cursor = res.nextPageCursor ?? "";
+    if (!cursor) break;
+  }
+  byInfo = { at: Date.now(), syms };
+  return syms;
+}
+function bySymbolFor(id, syms) {
+  const [src, s] = id.split(":");
+  if (src === "crypto") {
+    const b = s.replace(/USDT$/, "");
+    return [`${b}USDT`, `1000${b}USDT`, `${b}1000USDT`, `10000${b}USDT`, `1000000${b}USDT`].find((c2) => syms.has(c2)) ?? null;
+  }
+  const c = { "GC=F": "XAUTUSDT" }[s];
+  return c && syms.has(c) ? c : null;
+}
+function byRules(sym, syms) {
+  const x = syms.get(sym);
+  return { sym, tick: Number(x.priceFilter.tickSize), step: Number(x.lotSizeFilter.qtyStep), minQty: Number(x.lotSizeFilter.minOrderQty), minNotional: Number(x.lotSizeFilter.minNotionalValue ?? 5) || 5, maxLev: Number(x.leverageFilter?.maxLeverage ?? 10) || 10 };
+}
+const byMark = async (sym) => Number((await by("live", "GET", "/v5/market/tickers", { category: "linear", symbol: sym }, false)).list?.[0]?.markPrice);
+const byPos = async (mode, sym) => ((await by(mode, "GET", "/v5/position/list", { category: "linear", symbol: sym })).list ?? []).find((x) => Number(x.size) > 0) ?? null;
+async function byStop(mode, sym, stop, tick) {
+  await by(mode, "POST", "/v5/position/trading-stop", { category: "linear", symbol: sym, tpslMode: "Full", stopLoss: roundTo(stop, tick), slTriggerBy: "MarkPrice", positionIdx: 0 }).catch((e) => {
+    if (!(e instanceof ByError) || e.code !== 34040) throw e;
+  });
+}
+async function byRealized(mode, sym, sinceMs) {
+  const res = await by(mode, "GET", "/v5/position/closed-pnl", { category: "linear", symbol: sym, startTime: Math.max(sinceMs - 6e4, Date.now() - 6.9 * 864e5), limit: 100 });
+  return (res.list ?? []).reduce((a, x) => a + Number(x.closedPnl ?? 0), 0);
+}
+async function byClose(mode, sym) {
+  await by(mode, "POST", "/v5/order/cancel-all", { category: "linear", symbol: sym }).catch(() => {
+  });
+  const p = await byPos(mode, sym);
+  if (!p) return null;
+  await by(mode, "POST", "/v5/order/create", { category: "linear", symbol: sym, side: p.side === "Buy" ? "Sell" : "Buy", orderType: "Market", qty: p.size, reduceOnly: true, positionIdx: 0 });
+  return Number((await by(mode, "GET", "/v5/market/tickers", { category: "linear", symbol: sym }, false)).list?.[0]?.lastPrice) || null;
+}
+function mtCreds(mode) {
+  const token = Deno.env.get("METAAPI_TOKEN"), acc = Deno.env.get(mode === "live" ? "METAAPI_ACCOUNT_LIVE" : "METAAPI_ACCOUNT_DEMO");
+  return token && acc ? { token, acc, region: Deno.env.get("METAAPI_REGION") || "new-york" } : null;
+}
+async function mt(mode, method, path, body) {
+  const c = mtCreds(mode);
+  if (!c) throw new UserError(`MT5 ${mode} is not connected: add METAAPI_TOKEN and METAAPI_ACCOUNT_${mode === "live" ? "LIVE" : "DEMO"} in Supabase secrets.`);
+  const r = await fetch(`https://mt-client-api-v1.${c.region}.agiliumtrade.ai/users/current/accounts/${c.acc}${path}`, { method, headers: { "auth-token": c.token, "content-type": "application/json", accept: "application/json" }, body: body ? JSON.stringify(body) : void 0 });
+  const text = await r.text();
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    j = { message: text.slice(0, 160) };
+  }
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) throw new UserError("MetaApi rejected the token. Copy it again from app.metaapi.cloud \u2192 API access.");
+    if (r.status === 404) throw new UserError(`MetaApi can't find that MT5 account${/region/i.test(j.message ?? "") ? " in this region" : ""}. Check METAAPI_ACCOUNT_${mode === "live" ? "LIVE" : "DEMO"} and METAAPI_REGION, and that the account is deployed.`);
+    throw new UserError(`MT5 (MetaApi): ${j.message ?? text.slice(0, 120)} (${r.status})`);
+  }
+  return j;
+}
+async function mtTrade(mode, body) {
+  const j = await mt(mode, "POST", "/trade", body);
+  if (!["TRADE_RETCODE_DONE", "TRADE_RETCODE_PLACED", "TRADE_RETCODE_DONE_PARTIAL", "TRADE_RETCODE_NO_CHANGES"].includes(j.stringCode)) throw new UserError(`MT5 refused: ${j.message ?? j.stringCode}`);
+  return j;
+}
+const mtSymCache = {};
+async function mtSymbols(mode) {
+  const c = mtSymCache[mode];
+  if (c && Date.now() - c.at < 36e5) return c.list;
+  const list = (await mt(mode, "GET", "/symbols")).filter((x) => typeof x === "string");
+  mtSymCache[mode] = { at: Date.now(), list };
+  return list;
+}
+const MT_MAP = {
+  "GC=F": ["XAUUSD", "GOLD"],
+  "SI=F": ["XAGUSD", "SILVER"],
+  "PL=F": ["XPTUSD"],
+  "PA=F": ["XPDUSD"],
+  "CL=F": ["USOIL", "XTIUSD", "WTI", "USOUSD"],
+  "BZ=F": ["UKOIL", "XBRUSD", "BRENT"],
+  "NG=F": ["XNGUSD", "NATGAS", "NGAS"],
+  "^GSPC": ["US500", "SPX500", "SP500", "US500CASH"],
+  SPY: ["US500", "SPX500", "SP500"],
+  "^NDX": ["USTEC", "NAS100", "US100", "USTECH"],
+  QQQ: ["USTEC", "NAS100", "US100"],
+  "^IXIC": ["USTEC", "NAS100", "US100"],
+  "^DJI": ["US30", "DJ30", "WS30", "US30CASH"],
+  DIA: ["US30", "DJ30", "WS30"],
+  "^RUT": ["US2000", "RUSSELL2000"],
+  IWM: ["US2000"]
+};
+function mtSymbolFor(id, list) {
+  const [src, s] = id.split(":");
+  const cands = src === "crypto" ? [s.replace(/USDT$/, "") + "USD", s] : s.endsWith("=X") ? [s.replace("=X", "")] : MT_MAP[s] ?? (/^[A-Z]{2,5}$/.test(s) ? [s] : []);
+  for (const c of cands) {
+    const exact = list.find((x) => x.toUpperCase() === c);
+    if (exact) return { sym: exact, cand: c };
+    const rx = new RegExp(`^${c}([._#-]?[A-Z]{0,2}|[._-]US|[._-]?CASH)$`, "i");
+    const near = list.find((x) => rx.test(x));
+    if (near) return { sym: near, cand: c };
+  }
+  return null;
+}
+async function mtPrice(mode, sym) {
+  const p = await mt(mode, "GET", `/symbols/${encodeURIComponent(sym)}/current-price`);
+  return (Number(p.bid) + Number(p.ask)) / 2;
+}
+const mtSpec = (mode, sym) => mt(mode, "GET", `/symbols/${encodeURIComponent(sym)}/specification`);
+async function mtUsdPerLot(mode, cand, price, contractSize, list) {
+  if (/^[A-Z]{6}$/.test(cand) && !/^(XAU|XAG|XPT|XPD|BTC|ETH)/.test(cand)) {
+    const base = cand.slice(0, 3), quote = cand.slice(3);
+    if (base === "USD") return contractSize;
+    if (quote === "USD") return contractSize * price;
+    const direct = mtSymbolFor(`yahoo:${base}USD=X`, list), inverse = mtSymbolFor(`yahoo:USD${base}=X`, list);
+    if (direct) return contractSize * await mtPrice(mode, direct.sym);
+    if (inverse) return contractSize / await mtPrice(mode, inverse.sym);
+    return null;
+  }
+  return contractSize * price;
+}
+const roundDigits = (x, d) => Number(x.toFixed(Math.max(0, Math.min(8, d))));
 const DV_MAP = {
   "GC=F": ["frxXAUUSD"],
   "SI=F": ["frxXAGUSD"],
@@ -279,6 +464,7 @@ async function derivActive(d) {
   return dvActive;
 }
 const dvSymbolFor = (id, act) => derivCandidates(id).find((c) => act.all.has(c)) ?? null;
+const allow = (cfg, b) => cfg.allowed ? cfg.allowed.includes(b) : cfg.broker === "both" || cfg.broker === b;
 function readPicks(x) {
   if (!Array.isArray(x) || !x.length) return null;
   const out = [];
@@ -295,7 +481,7 @@ function readPicks(x) {
 const PICK_MIN_H = 24, PICK_MAX_H = 400 * 24;
 const pickHours = (picks) => Math.min(PICK_MAX_H, Math.max(PICK_MIN_H, ...picks.map((p) => p.expectBars * TF_H[p.tf] * 1.6)));
 function readCfg(b) {
-  const broker = b.broker === "deriv" ? "deriv" : b.broker === "both" ? "both" : "binance";
+  const broker = ["binance", "deriv", "bybit", "mt5", "both"].includes(b.broker) ? b.broker : "binance";
   const alloc = ["each", "equal", "score", "custom"].includes(b.alloc) ? b.alloc : "equal";
   const custom = b.custom && typeof b.custom === "object" ? Object.fromEntries(Object.entries(b.custom).map(([k, v]) => [String(k), Math.max(0, Number(v))]).filter(([, v]) => Number(v) > 0)) : null;
   const picks = readPicks(b.picks);
@@ -329,32 +515,63 @@ async function newsView(r) {
 }
 async function venues(cfg, d) {
   const v = {};
-  if (cfg.broker !== "deriv") v.bn = await bnSymbols(cfg.mode).catch(() => /* @__PURE__ */ new Map());
-  if (cfg.broker !== "binance" && d) v.dv = await derivActive(d).catch(() => ({ all: /* @__PURE__ */ new Map(), open: /* @__PURE__ */ new Set() }));
+  await Promise.all([
+    allow(cfg, "binance") && bnSymbols(cfg.mode).then((x) => {
+      v.bn = x;
+    }, () => {
+      v.bn = /* @__PURE__ */ new Map();
+    }),
+    allow(cfg, "bybit") && bySymbols().then((x) => {
+      v.by = x;
+    }, () => {
+      v.by = /* @__PURE__ */ new Map();
+    }),
+    allow(cfg, "mt5") && mtCreds(cfg.mode) && mtSymbols(cfg.mode).then((x) => {
+      v.mt = x;
+    }, () => {
+      v.mt = [];
+    }),
+    allow(cfg, "deriv") && d && derivActive(d).then((x) => {
+      v.dv = x;
+    }, () => {
+      v.dv = { all: /* @__PURE__ */ new Map(), open: /* @__PURE__ */ new Set() };
+    })
+  ]);
   return v;
 }
 function route(id, cfg, v) {
-  if (cfg.broker !== "deriv" && v.bn) {
-    const s = bnSymbolFor(id, v.bn);
-    if (s) return { broker: "binance", sym: s };
-  }
-  if (cfg.broker !== "binance" && v.dv) {
-    const s = dvSymbolFor(id, v.dv);
-    if (s && v.dv.open.has(s)) return { broker: "deriv", sym: s };
+  for (const b of BROKERS) {
+    if (!allow(cfg, b)) continue;
+    if (b === "binance" && v.bn) {
+      const s = bnSymbolFor(id, v.bn);
+      if (s) return { broker: b, sym: s };
+    }
+    if (b === "bybit" && v.by) {
+      const s = bySymbolFor(id, v.by);
+      if (s) return { broker: b, sym: s };
+    }
+    if (b === "mt5" && v.mt?.length) {
+      const m = mtSymbolFor(id, v.mt);
+      if (m) return { broker: b, sym: m.sym, cand: m.cand };
+    }
+    if (b === "deriv" && v.dv) {
+      const s = dvSymbolFor(id, v.dv);
+      if (s && v.dv.open.has(s)) return { broker: b, sym: s };
+    }
   }
   return null;
 }
 async function candidates(db, cfg, v, exclude, want) {
-  const hz2 = HORIZONS[cfg.horizon];
+  const hz = HORIZONS[cfg.horizon];
   const now = Date.now();
-  const { data } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(now - 3 * 36e5 - (hz2.h > 100 ? 4 * 864e5 : 0)).toISOString());
+  const { data } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(now - 3 * 36e5 - (hz.h > 100 ? 4 * 864e5 : 0)).toISOString());
   const rows = (data ?? []).filter((r) => fresh(r, now) && r.setup);
-  const by = /* @__PURE__ */ new Map();
-  for (const r of rows) by.set(r.symbol, [...by.get(r.symbol) ?? [], r]);
+  const by2 = /* @__PURE__ */ new Map();
+  for (const r of rows) by2.set(r.symbol, [...by2.get(r.symbol) ?? [], r]);
   const lean = (r) => r.setup && !r.hard_fail && (r.score ?? 0) >= 55 ? r.dir : null;
   const atBar = (r) => (r.score ?? 0) >= cfg.strict && (r.verdict === "APPROVED" || cfg.strict < 80 && r.verdict === "WATCH" && r.triggered && !r.hard_fail && (r.rr1 ?? 0) >= 2);
   const nearBar = (r) => !atBar(r) && (r.score ?? 0) >= 55 && !r.hard_fail && r.triggered && (r.rr1 ?? 0) >= 1.5 && r.verdict !== "NO TRADE";
-  const fitsTime = (r) => hz2.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6 <= hz2.h;
+  const fitsTime = (r) => hz.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6 <= hz.h;
   const newsSoon = (r) => {
     const m = String(r.news_warn ?? "").match(/is due (\S+)$/);
     const at = m ? Date.parse(m[1]) : NaN;
@@ -365,7 +582,7 @@ async function candidates(db, cfg, v, exclude, want) {
   const u = (a) => new Set(a.map((r) => r.symbol)).size;
   const diag = { quality: u(s1), time: u(s2), broker: u(s3), news: u(s4), opinionDropped: 0, near: 0, examples: [...new Map(s1.map((r) => [r.symbol, `${r.label} ${r.tf} (${r.score}%)`])).values()].slice(0, 6) };
   const rank = (r) => {
-    const others = (by.get(r.symbol) ?? []).filter((x) => x.tf !== r.tf && ALL_TFS.includes(x.tf));
+    const others = (by2.get(r.symbol) ?? []).filter((x) => x.tf !== r.tf && ALL_TFS.includes(x.tf));
     const agree = others.filter((x) => lean(x) === r.dir).length, against = others.filter((x) => lean(x) && lean(x) !== r.dir).length;
     return { ...r, agree, against, venue: route(r.symbol, cfg, v), rank: r.score + 4 * agree - 8 * against + Math.min(4, r.rr1 ?? 0) * 2 };
   };
@@ -437,6 +654,8 @@ async function size(cfg, r, d, v) {
   if (!src) return { skip: `${r.label}: no live price right now.` };
   let live;
   if (venue.broker === "binance") live = await bnMark(cfg.mode, venue.sym).catch(() => null);
+  else if (venue.broker === "bybit") live = await byMark(venue.sym).catch(() => null);
+  else if (venue.broker === "mt5") live = await mtPrice(cfg.mode, venue.sym).catch(() => null);
   else live = d ? await d.spot(venue.sym) : null;
   if (!live) return { skip: `${r.label}: no live price from ${brokerName(venue.broker)}.` };
   const k = live / src;
@@ -444,8 +663,8 @@ async function size(cfg, r, d, v) {
   if (!(long ? stop < live && t1 > live : stop > live && t1 < live)) return { skip: `${r.label} has already moved past its stop or first target.` };
   const stopPct = Math.abs(live - stop) / live;
   let lev;
-  if (venue.broker === "binance") {
-    const maxLev = Number(v.bn?.get(venue.sym)?.maxLeverage ?? 10) || 10;
+  if (venue.broker === "binance" || venue.broker === "bybit" || venue.broker === "mt5") {
+    const maxLev = venue.broker === "binance" ? Number(v.bn?.get(venue.sym)?.maxLeverage ?? 10) || 10 : venue.broker === "bybit" ? byRules(venue.sym, v.by).maxLev : 30;
     lev = Math.max(1, Math.min(cfg.risk === "max" ? 20 : 10, maxLev, Math.floor(target / stopPct)));
     if (lev * stopPct >= 0.8) lev = Math.floor(0.7 / stopPct);
     if (lev < 1) return { skip: `${r.label}'s stop-loss is too far away to trade safely.` };
@@ -456,7 +675,7 @@ async function size(cfg, r, d, v) {
     lev = fit.length ? fit[fit.length - 1] : mults[0];
     if (lev * stopPct > 0.9) return { skip: `${r.label}'s stop-loss is too far for Deriv's smallest multiplier (${mults[0]}x).` };
   }
-  return { broker: venue.broker, sym: venue.sym, live, k, stop, t1, t2, stopPct, lev, t1Pct: Math.abs(t1 - live) / live, t2Pct: Math.abs(t2 - live) / live };
+  return { broker: venue.broker, sym: venue.sym, cand: venue.cand, live, k, stop, t1, t2, stopPct, lev, t1Pct: Math.abs(t1 - live) / live, t2Pct: Math.abs(t2 - live) / live };
 }
 function allocate(cfg, trades) {
   const n = trades.length;
@@ -516,12 +735,97 @@ async function preview(db, cfg, exclude, want, d) {
         t.tooSmall = `Binance needs at least ${Math.ceil(rules.minNotional / t.leverage)} USDT on ${t.label} at ${t.leverage}x.`;
       }
       t._rules = rules;
+    } else if (t.broker === "bybit") {
+      const rules = byRules(t.brokerSymbol, v.by);
+      const qty = Number(floorTo(pos / t.entry, rules.step));
+      if (pos < rules.minNotional || qty < rules.minQty) t.tooSmall = `Bybit needs at least ${Math.ceil(Math.max(rules.minNotional, rules.minQty * t.entry) / t.leverage)} USDT on ${t.label} at ${t.leverage}x.`;
+      t._rules = rules;
+    } else if (t.broker === "mt5") {
+      try {
+        const spec = await mtSpec(cfg.mode, t.brokerSymbol);
+        const perLot = await mtUsdPerLot(cfg.mode, t._z.cand ?? t.brokerSymbol, t.entry, Number(spec.contractSize) || 1, v.mt);
+        if (!perLot) {
+          t.tooSmall = `${t.label}: Viko can't work out its dollar value on your MT5 broker, so it was left out.`;
+          continue;
+        }
+        const step = Number(spec.volumeStep) || 0.01, minV = Number(spec.minVolume) || step;
+        const vol = Number(floorTo(Math.min(pos / perLot, Number(spec.maxVolume) || 100), step));
+        if (vol < minV) t.tooSmall = `MT5 needs at least ${Math.ceil(minV * perLot / t.leverage)} USD on ${t.label} at ${t.leverage}x (the smallest lot is ${minV}).`;
+        t._mt = { vol, step, minV, digits: Number(spec.digits ?? 5) };
+      } catch (e) {
+        t.tooSmall = `${t.label}: ${e.message}`;
+      }
     } else if (t.money < 1) t.tooSmall = "Deriv needs at least 1 USD per trade.";
   }
-  const ok = trades.filter((t) => !t.tooSmall);
+  const L = await getLimits(db), u = await usage(db, cfg.mode, L);
+  const ok = withinLimits(trades.filter((t) => !t.tooSmall), u, L, skipped);
   skipped.push(...trades.filter((t) => t.tooSmall).map((t) => t.tooSmall));
   const pickH = cfg.picks ? pickHours(cfg.picks) : 0;
-  return { trades: ok, skipped, horizon: cfg.picks ? "until the targets or stop are hit" : HORIZONS[cfg.horizon].name, closeBy: cfg.picks ? Date.now() + pickH * 36e5 : null, total: totalOf(cfg), diag, venues: { binance: v.bn ? v.bn.size : null, deriv: v.dv ? v.dv.open.size : null } };
+  return { limits: u.applies ? { money: L.money, trades: L.trades, loss: L.loss, used: u.money, count: u.trades, pnl: u.pnl, lossHit: u.lossHit } : null, trades: ok, skipped, horizon: cfg.picks ? "until the targets or stop are hit" : HORIZONS[cfg.horizon].name, closeBy: cfg.picks ? Date.now() + pickH * 36e5 : null, total: totalOf(cfg), diag, venues: { binance: v.bn ? v.bn.size : null, deriv: v.dv ? v.dv.open.size : null } };
+}
+const NO_LIMITS = { on: false, money: null, trades: null, loss: null, closeOnLoss: false, applies: "live", tz: "Africa/Nairobi" };
+async function getLimits(db) {
+  const { data } = await db.from("viko_settings").select("v").eq("k", "limits").maybeSingle();
+  return { ...NO_LIMITS, ...data?.v ?? {} };
+}
+function readLimits(b) {
+  const pos = (x) => x === null || x === "" || x === void 0 ? null : Number(x) > 0 ? Number(x) : null;
+  let tz = String(b.tz ?? "Africa/Nairobi");
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    tz = "Africa/Nairobi";
+  }
+  return { on: !!b.on, money: pos(b.money), trades: pos(b.trades) ? Math.round(Number(b.trades)) : null, loss: pos(b.loss), closeOnLoss: !!b.closeOnLoss, applies: b.applies === "all" ? "all" : "live", tz };
+}
+function dayStart(tz, now = Date.now()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const g = (t) => Number(parts.find((x) => x.type === t).value);
+  const asUtc = Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second"));
+  const offset = asUtc - Math.floor(now / 1e3) * 1e3;
+  return Date.UTC(g("year"), g("month") - 1, g("day")) - offset;
+}
+async function usage(db, mode, L) {
+  L = L ?? await getLimits(db);
+  const since = dayStart(L.tz);
+  const { data: today } = await db.from("viko_auto_positions").select("stake,status,pnl,last_pnl,opened_at,closed_at").eq("mode", mode).or(`opened_at.gte."${new Date(since).toISOString()}",closed_at.gte."${new Date(since).toISOString()}",status.eq.open`);
+  const rows = today ?? [];
+  const openedToday = rows.filter((r) => Date.parse(r.opened_at) >= since);
+  const money = openedToday.reduce((a, r) => a + Number(r.stake ?? 0), 0);
+  const pnl = rows.reduce((a, r) => a + (r.status === "open" ? Number(r.last_pnl ?? 0) : r.closed_at && Date.parse(r.closed_at) >= since ? Number(r.pnl ?? 0) : 0), 0);
+  const applies = L.on && (L.applies === "all" || mode === "live");
+  return {
+    applies,
+    money: r2(money),
+    trades: openedToday.length,
+    pnl: r2(pnl),
+    lossHit: applies && L.loss != null && pnl <= -L.loss,
+    moneyLeft: applies && L.money != null ? Math.max(0, r2(L.money - money)) : Infinity,
+    tradesLeft: applies && L.trades != null ? Math.max(0, L.trades - openedToday.length) : Infinity,
+    since
+  };
+}
+function withinLimits(trades, u, L, skipped) {
+  if (!u.applies) return trades;
+  if (u.lossHit) {
+    skipped.push(`Daily loss limit reached (${sgn(u.pnl)} today, limit \u2212${L.loss}). No new trades until tomorrow.`);
+    return [];
+  }
+  const out = [];
+  let money = 0;
+  for (const t of trades) {
+    if (out.length >= u.tradesLeft) {
+      skipped.push(`${t.label}: daily trade limit (${L.trades} a day) reached.`);
+      continue;
+    }
+    if (money + t.money > u.moneyLeft + 1e-9) {
+      skipped.push(`${t.label}: would pass your daily money limit (${u.money} of ${L.money} used today).`);
+      continue;
+    }
+    money += t.money;
+    out.push(t);
+  }
+  return out;
 }
 async function place(db, cfg, plan_id, t, d) {
   const long = t.dir === "long";
@@ -551,6 +855,62 @@ async function place(db, cfg, plan_id, t, d) {
     });
     const { data: data2 } = await db.from("viko_auto_positions").insert({ ...base, broker_symbol: sym2, entry: entry2, qty: Number(qty), refs: { scale: 1, tick: rules.tick, step: rules.step, opened_ms: Date.now() }, last_price: entry2, last_pnl: 0 }).select().single();
     await event(db, plan_id, data2.id, `${long ? "Bought" : "Sold"} ${t.label} (${sym2}) on Binance at ${fmt(entry2)} with ${t.money} USDT at ${t.leverage}x. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} and ${fmt(t.target2)}.${t.below ? " Below your bar: filling an empty slot." : ""}`);
+    await alert(db, "open", cfg.mode, `${acct(cfg.mode)}: ${long ? "bought" : "sold"} ${t.label}`, `Binance, ${t.money} USDT at ${t.leverage}x, entry ${fmt(entry2)}. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} / ${fmt(t.target2)}. Expected profit ${sgn(t.profit1 ?? 0)} to ${sgn(t.profit2 ?? 0)} USDT; at the stop ${sgn(-(t.loss ?? 0))}.`);
+    return;
+  }
+  if (t.broker === "bybit") {
+    const rules = t._rules, sym2 = rules.sym, exit = long ? "Sell" : "Buy";
+    await by(cfg.mode, "POST", "/v5/position/set-leverage", { category: "linear", symbol: sym2, buyLeverage: String(t.leverage), sellLeverage: String(t.leverage) }).catch((e) => {
+      if (!(e instanceof ByError) || e.code !== 110043) throw e;
+    });
+    const mark = await byMark(sym2);
+    const qty = floorTo(t.money * t.leverage / mark, rules.step);
+    if (Number(qty) < rules.minQty) throw new UserError(`${t.label}: the amount is below Bybit's minimum size.`);
+    await by(cfg.mode, "POST", "/v5/order/create", { category: "linear", symbol: sym2, side: long ? "Buy" : "Sell", orderType: "Market", qty, stopLoss: roundTo(t.stop, rules.tick), slTriggerBy: "MarkPrice", tpslMode: "Full", positionIdx: 0 });
+    const pos = await byPos(cfg.mode, sym2);
+    if (!pos) throw new UserError(`${t.label}: Bybit didn't fill the order.`);
+    const entry2 = Number(pos.avgPrice) || mark, size2 = Number(pos.size);
+    if (!Number(pos.stopLoss)) {
+      try {
+        await byStop(cfg.mode, sym2, t.stop, rules.tick);
+      } catch (e) {
+        await byClose(cfg.mode, sym2).catch(() => {
+        });
+        throw new UserError(`${t.label}: Bybit refused the stop-loss, so the trade was closed straight away. ${e.message}`);
+      }
+    }
+    const half = floorTo(size2 / 2, rules.step), rest = floorTo(size2 - Number(half), rules.step);
+    const tp = (price, q) => by(cfg.mode, "POST", "/v5/order/create", { category: "linear", symbol: sym2, side: exit, orderType: "Limit", price: roundTo(price, rules.tick), qty: q, reduceOnly: true, timeInForce: "GTC", positionIdx: 0 }).catch(() => {
+    });
+    if (Number(half) >= rules.minQty && Number(rest) >= rules.minQty) {
+      await tp(t.target1, half);
+      await tp(t.target2, rest);
+    } else await tp(t.target2, String(size2));
+    const { data: data2 } = await db.from("viko_auto_positions").insert({ ...base, broker_symbol: sym2, entry: entry2, qty: size2, refs: { scale: 1, tick: rules.tick, step: rules.step, opened_ms: Date.now() }, last_price: entry2, last_pnl: 0 }).select().single();
+    await event(db, plan_id, data2.id, `${long ? "Bought" : "Sold"} ${t.label} (${sym2}) on Bybit at ${fmt(entry2)} with ${t.money} USDT at ${t.leverage}x. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} and ${fmt(t.target2)}.`);
+    await alert(db, "open", cfg.mode, `${acct(cfg.mode)}: ${long ? "bought" : "sold"} ${t.label}`, `Bybit, ${t.money} USDT at ${t.leverage}x, entry ${fmt(entry2)}. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} / ${fmt(t.target2)}. Expected profit ${sgn(t.profit1 ?? 0)} to ${sgn(t.profit2 ?? 0)} USDT; at the stop ${sgn(-(t.loss ?? 0))}.`);
+    return;
+  }
+  if (t.broker === "mt5") {
+    const sym2 = t.brokerSymbol, { vol, step, minV, digits } = t._mt;
+    const half = Number(floorTo(vol / 2, step)), rest = Number(floorTo(vol - half, step));
+    const legs = half >= minV && rest >= minV ? [{ role: "t1", vol: half, tp: t.target1 }, { role: "t2", vol: rest, tp: t.target2 }] : [{ role: "t2", vol, tp: t.target2 }];
+    const refs2 = [];
+    for (const l of legs) {
+      try {
+        const res = await mtTrade(cfg.mode, { actionType: long ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL", symbol: sym2, volume: l.vol, stopLoss: roundDigits(t.stop, digits), takeProfit: roundDigits(l.tp, digits), comment: "Viko" });
+        refs2.push({ id: String(res.positionId ?? res.orderId), role: l.role, vol: l.vol });
+      } catch (e) {
+        for (const x of refs2) await mtTrade(cfg.mode, { actionType: "POSITION_CLOSE_ID", positionId: x.id }).catch(() => {
+        });
+        throw new UserError(`${t.label}: ${e.message}`);
+      }
+    }
+    const open = (await mt(cfg.mode, "GET", "/positions").catch(() => [])).find((x) => String(x.id) === refs2[0].id);
+    const entry2 = Number(open?.openPrice ?? t.entry);
+    const { data: data2 } = await db.from("viko_auto_positions").insert({ ...base, broker_symbol: sym2, entry: entry2, qty: vol, refs: { positions: refs2, digits, opened_ms: Date.now() }, last_price: entry2, last_pnl: 0 }).select().single();
+    await event(db, plan_id, data2.id, `${long ? "Bought" : "Sold"} ${t.label} (${sym2}) on MT5: ${vol} lots at ${fmt(entry2)}. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} and ${fmt(t.target2)}.`);
+    await alert(db, "open", cfg.mode, `${acct(cfg.mode)}: ${long ? "bought" : "sold"} ${t.label}`, `MT5, ${vol} lots (about ${t.money} USD of margin at ${t.leverage}x), entry ${fmt(entry2)}. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} / ${fmt(t.target2)}. Expected profit ${sgn(t.profit1 ?? 0)} to ${sgn(t.profit2 ?? 0)} USD; at the stop ${sgn(-(t.loss ?? 0))}.`);
     return;
   }
   const { sym, stopPct, t1Pct, t2Pct } = t._z;
@@ -573,20 +933,31 @@ async function place(db, cfg, plan_id, t, d) {
   const entry = Number(first?.entry_spot ?? first?.entry_tick ?? t.entry);
   const { data } = await db.from("viko_auto_positions").insert({ ...base, broker_symbol: sym, entry, refs: { contracts: refs, account: d.account.account_id }, last_price: entry, last_pnl: 0 }).select().single();
   await event(db, plan_id, data.id, `${long ? "Bought (Up)" : "Sold (Down)"} ${t.label} (${sym}) on Deriv with ${t.money} USD at x${t.leverage}. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} and ${fmt(t.target2)}.${t.below ? " Below your bar: filling an empty slot." : ""}`);
+  await alert(db, "open", cfg.mode, `${acct(cfg.mode)}: ${long ? "bought" : "sold"} ${t.label}`, `Deriv, ${t.money} USD at x${t.leverage}, entry ${fmt(entry)}. Stop ${fmt(t.stop)}, targets ${fmt(t.target1)} / ${fmt(t.target2)}. Expected profit ${sgn(t.profit1 ?? 0)} to ${sgn(t.profit2 ?? 0)} USD; at the stop ${sgn(-(t.loss ?? 0))}.`);
 }
 function planCfg(plan) {
   return { broker: plan.broker, mode: plan.mode, amount: plan.amount, count: plan.count, horizon: plan.horizon, strict: plan.strict, risk: plan.risk, alloc: plan.alloc ?? "equal", custom: plan.custom ?? null, fallback: plan.fallback ?? true };
 }
+async function brokerBalance(b, mode, d) {
+  if (b === "binance") return Number((await bn(mode, "GET", "/fapi/v3/account")).availableBalance);
+  if (b === "bybit") {
+    const w = (await by(mode, "GET", "/v5/account/wallet-balance", { accountType: "UNIFIED" })).list?.[0];
+    return Number(w?.totalAvailableBalance ?? w?.coin?.find((c) => c.coin === "USDT")?.walletBalance ?? 0);
+  }
+  if (b === "mt5") return Number((await mt(mode, "GET", "/account-information")).freeMargin ?? 0);
+  return Number((await d?.send({ balance: 1 }).catch(() => null))?.balance?.balance ?? d?.account.balance ?? Infinity);
+}
+const connectedTo = (b, mode) => b === "binance" ? !!bnCreds(mode) : b === "bybit" ? !!byCreds(mode) : b === "mt5" ? !!mtCreds(mode) : Deriv.connected();
 function usableBrokers(cfg) {
-  const want = cfg.broker === "both" ? ["binance", "deriv"] : [cfg.broker];
-  return want.filter((b) => b === "binance" ? !!bnCreds(cfg.mode) : Deriv.connected());
+  const want = cfg.broker === "both" ? BROKERS : [cfg.broker];
+  return want.filter((b) => connectedTo(b, cfg.mode));
 }
 async function fill(db, plan, d) {
   if (plan.horizon === "pick") return 0;
   const cfg = planCfg(plan);
   const usable = usableBrokers(cfg);
   if (!usable.length) return 0;
-  const eff = { ...cfg, broker: usable.length === 2 ? "both" : usable[0] };
+  const eff = { ...cfg, allowed: usable };
   const { data: mine } = await db.from("viko_auto_positions").select("symbol").eq("plan_id", plan.id);
   const { data: openAll } = await db.from("viko_auto_positions").select("symbol").eq("status", "open").eq("mode", plan.mode);
   const slots = plan.count - (mine ?? []).length;
@@ -617,6 +988,7 @@ async function manageBinance(db, p, endNow, why = "time") {
     const reason = pos ? why : Math.abs(exit - p.stop) < Math.abs(exit - p.target2) ? p.t1_hit ? "stop at entry" : "stop" : "target 2";
     await db.from("viko_auto_positions").update({ status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(pnl), close_reason: reason, last_price: exit, last_pnl: r2(pnl), updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", p.id);
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${pnl >= 0 ? "+" : ""}${r2(pnl)} USDT.`);
+    await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(pnl)} USDT`, `${pnl >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(pnl))} USDT on ${p.stake} USDT (${reason}). Binance, exit ${fmt(exit)}.`, r2(pnl));
     return;
   }
   const amt = Math.abs(Number(pos.positionAmt)), mark = Number(pos.markPrice) / sc;
@@ -630,6 +1002,7 @@ async function manageBinance(db, p, endNow, why = "time") {
     patch.t1_hit = true;
     newStop = p.entry;
     msg = `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price, so the rest can't lose.`;
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit; the stop is now at the entry price, so the rest can't lose. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl);
   } else if (p.t1_hit && prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
     newStop = p.target1;
     msg = `${p.label}: well on the way to target 2. Stop raised to target 1 to lock in profit.`;
@@ -667,6 +1040,7 @@ async function manageDeriv(db, p, d, endNow, why = "time") {
   if (!p.t1_hit && t1?.s?.is_sold && Number(t1.s.profit) > 0) {
     patch.t1_hit = true;
     patch.stop = p.entry;
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Deriv. Result so far ${sgn(total)} USD.`, r2(total));
     if (t2?.s && !t2.s.is_sold) {
       const ok = await d.send({ contract_update: 1, contract_id: t2.c.id, limit_order: { stop_loss: Math.max(0.1, r2(t2.c.stake * 0.02)) } }).then(() => true, () => false);
       await event(db, p.plan_id, p.id, ok ? `${p.label}: target 1 hit, half taken as profit. The rest now risks almost nothing.` : `${p.label}: target 1 hit, half taken as profit.`);
@@ -676,6 +1050,93 @@ async function manageDeriv(db, p, d, endNow, why = "time") {
     const reason = endNow ? why : total > 0 ? t2?.s && Number(t2.s.profit) > 0 ? "target 2" : "target 1" : "stop";
     Object.assign(patch, { status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${total >= 0 ? "+" : ""}${r2(total)} USD.`);
+    await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)} USD`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} USD on ${p.stake} USD (${reason}). Deriv, last price ${fmt(spot)}.`, r2(total));
+  }
+  await db.from("viko_auto_positions").update(patch).eq("id", p.id);
+}
+async function manageBybit(db, p, endNow, why = "time") {
+  const mode = p.mode, sym = p.broker_symbol, tick = p.refs?.tick ?? 1e-4, long = p.dir === "long";
+  const since = p.refs?.opened_ms ?? Date.parse(p.opened_at);
+  const pos = await byPos(mode, sym);
+  if (!pos || endNow) {
+    let exit = p.last_price;
+    if (pos) exit = await byClose(mode, sym) ?? p.last_price;
+    await by(mode, "POST", "/v5/order/cancel-all", { category: "linear", symbol: sym }).catch(() => {
+    });
+    const pnl = await byRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
+    const reason = pos ? why : Math.abs(exit - p.stop) < Math.abs(exit - p.target2) ? p.t1_hit ? "stop at entry" : "stop" : "target 2";
+    await db.from("viko_auto_positions").update({ status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(pnl), close_reason: reason, last_price: exit, last_pnl: r2(pnl), updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", p.id);
+    await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(pnl)} USDT.`);
+    await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(pnl)} USDT`, `${pnl >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(pnl))} USDT on ${p.stake} USDT (${reason}). Bybit, exit ${fmt(exit)}.`, r2(pnl));
+    return;
+  }
+  const size2 = Number(pos.size), mark = Number(pos.markPrice);
+  const realized = p.t1_hit ? await byRealized(mode, sym, since).catch(() => 0) : 0;
+  const patch = { last_price: mark, last_pnl: r2(Number(pos.unrealisedPnl) + realized), updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  const prog = (long ? mark - p.entry : p.entry - mark) / Math.abs(p.target2 - p.entry);
+  let newStop = null, msg = "";
+  if (!p.t1_hit && size2 <= p.qty * 0.75) {
+    patch.t1_hit = true;
+    newStop = p.entry;
+    msg = `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price.`;
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on Bybit; the stop is now at the entry price. Result so far ${sgn(patch.last_pnl)} USDT.`, patch.last_pnl);
+  } else if (p.t1_hit && prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
+    newStop = p.target1;
+    msg = `${p.label}: well on the way to target 2. Stop raised to target 1.`;
+  }
+  if (newStop !== null || !Number(pos.stopLoss)) {
+    const st = newStop ?? p.stop;
+    await byStop(mode, sym, st, tick);
+    patch.stop = st;
+    await event(db, p.plan_id, p.id, msg || `${p.label}: the stop-loss was missing on Bybit, so Viko put it back at ${fmt(st)}.`);
+  }
+  await db.from("viko_auto_positions").update(patch).eq("id", p.id);
+}
+async function manageMt5(db, p, endNow, why = "time") {
+  const mode = p.mode, legs = p.refs?.positions ?? [], digits = p.refs?.digits ?? 5, long = p.dir === "long";
+  const done = { ...p.refs?.done ?? {} };
+  const open = (await mt(mode, "GET", "/positions")).filter((x) => legs.some((l) => l.id === String(x.id)));
+  if (endNow) for (const x of open) await mtTrade(mode, { actionType: "POSITION_CLOSE_ID", positionId: String(x.id) }).catch(() => {
+  });
+  const stillOpen = endNow ? [] : open;
+  for (const l of legs) {
+    if (stillOpen.some((x) => String(x.id) === l.id) || l.id in done) continue;
+    const deals = await mt(mode, "GET", `/history-deals/position/${encodeURIComponent(l.id)}`).catch(() => []);
+    done[l.id] = deals.reduce((a, d) => a + Number(d.profit ?? 0) + Number(d.commission ?? 0) + Number(d.swap ?? 0), 0);
+  }
+  const openPnl = stillOpen.reduce((a, x) => a + Number(x.profit ?? 0) + Number(x.swap ?? 0) + Number(x.commission ?? 0), 0);
+  const realized = Object.values(done).reduce((a, x) => a + x, 0);
+  const spot = Number(stillOpen[0]?.currentPrice ?? p.last_price);
+  const patch = { last_price: spot, last_pnl: r2(openPnl + realized), refs: { ...p.refs, done }, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  const t1 = legs.find((l) => l.role === "t1"), t2open = stillOpen.find((x) => legs.some((l) => l.role === "t2" && l.id === String(x.id)));
+  if (!p.t1_hit && t1 && t1.id in done && done[t1.id] > 0 && t2open) {
+    patch.t1_hit = true;
+    patch.stop = p.entry;
+    await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(t2open.id), stopLoss: roundDigits(p.entry, digits), takeProfit: roundDigits(p.target2, digits) }).catch(() => {
+    });
+    await event(db, p.plan_id, p.id, `${p.label}: target 1 hit, half taken as profit. Stop moved to the entry price.`);
+    await alert(db, "t1", p.mode, `${acct(p.mode)}: ${p.label} hit target 1`, `Half taken as profit on MT5; the stop is now at the entry price. Result so far ${sgn(patch.last_pnl)}.`, patch.last_pnl);
+  } else if (p.t1_hit && t2open) {
+    const prog = (long ? spot - p.entry : p.entry - spot) / Math.abs(p.target2 - p.entry);
+    if (prog >= 0.6 && (long ? p.stop < p.target1 : p.stop > p.target1)) {
+      await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(t2open.id), stopLoss: roundDigits(p.target1, digits), takeProfit: roundDigits(p.target2, digits) }).then(async () => {
+        patch.stop = p.target1;
+        await event(db, p.plan_id, p.id, `${p.label}: well on the way to target 2. Stop raised to target 1.`);
+      }, () => {
+      });
+    }
+  }
+  for (const x of stillOpen) if (!Number(x.stopLoss)) {
+    await mtTrade(mode, { actionType: "POSITION_MODIFY", positionId: String(x.id), stopLoss: roundDigits(patch.stop ?? p.stop, digits), takeProfit: Number(x.takeProfit) || void 0 }).catch(() => {
+    });
+    await event(db, p.plan_id, p.id, `${p.label}: the stop-loss was missing on MT5, so Viko put it back.`);
+  }
+  if (!stillOpen.length) {
+    const total = realized;
+    const reason = endNow ? why : total > 0 ? legs.some((l) => l.role === "t2" && (done[l.id] ?? 0) > 0) ? "target 2" : "target 1" : p.t1_hit ? "stop at entry" : "stop";
+    Object.assign(patch, { status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(total), last_pnl: r2(total), close_reason: reason });
+    await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(total)}.`);
+    await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)}`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} on about ${p.stake} USD (${reason}). MT5 ${p.broker_symbol}.`, r2(total));
   }
   await db.from("viko_auto_positions").update(patch).eq("id", p.id);
 }
@@ -689,15 +1150,32 @@ async function manageAll(db, opts) {
     return sessions.get(mode);
   };
   const errors = [];
+  const L = await getLimits(db);
+  const closeAll = {};
+  if (L.on && L.loss != null) for (const mode of ["demo", "live"]) {
+    const u = await usage(db, mode, L);
+    if (!u.lossHit) continue;
+    closeAll[mode] = L.closeOnLoss;
+    const key = `limit_hit:${mode}`;
+    const { data: seen } = await db.from("viko_settings").select("v").eq("k", key).maybeSingle();
+    if (Number(seen?.v?.since) !== u.since) {
+      await db.from("viko_settings").upsert({ k: key, v: { since: u.since }, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      await alert(db, "limit", mode, `${acct(mode)}: daily loss limit reached`, `Today's result is ${sgn(u.pnl)} (limit \u2212${L.loss}). Viko won't open new trades until tomorrow${L.closeOnLoss ? " and is closing the open ones now" : ""}.`, u.pnl);
+      await event(db, null, null, `Daily loss limit reached on ${acct(mode).toLowerCase()} (${sgn(u.pnl)} today). No new trades until tomorrow${L.closeOnLoss ? "; open trades are being closed" : ""}.`);
+    }
+  }
   try {
     for (const plan of plans ?? []) {
       const ending = Date.now() >= Date.parse(plan.ends_at) || opts.endPlan === plan.id;
       const { data: pos } = await db.from("viko_auto_positions").select("*").eq("plan_id", plan.id).eq("status", "open");
       for (const p of pos ?? []) {
-        const end = ending || opts.endPosition === p.id;
-        const why = opts.endPlan === plan.id || opts.endPosition === p.id ? "collected by you" : "time window ended";
+        const end = ending || opts.endPosition === p.id || !!closeAll[p.mode];
+        const why = opts.endPlan === plan.id || opts.endPosition === p.id ? "collected by you" : closeAll[p.mode] && !ending ? "daily loss limit" : "time window ended";
         try {
-          p.broker === "binance" ? await manageBinance(db, p, end, why) : await manageDeriv(db, p, await deriv(p.mode), end, why);
+          if (p.broker === "binance") await manageBinance(db, p, end, why);
+          else if (p.broker === "bybit") await manageBybit(db, p, end, why);
+          else if (p.broker === "mt5") await manageMt5(db, p, end, why);
+          else await manageDeriv(db, p, await deriv(p.mode), end, why);
         } catch (e) {
           errors.push(`${p.label}: ${e.message}`);
         }
@@ -709,7 +1187,7 @@ async function manageAll(db, opts) {
       }
       if (opts.fillPlans && Date.now() < Date.parse(plan.enter_until)) {
         try {
-          await fill(db, plan, plan.broker !== "binance" && Deriv.connected() ? await deriv(plan.mode) : null);
+          await fill(db, plan, (plan.broker === "deriv" || plan.broker === "both") && Deriv.connected() ? await deriv(plan.mode) : null);
         } catch (e) {
           errors.push(e.message);
         }
@@ -757,6 +1235,12 @@ Deno.serve(async (req) => {
           out.deriv_list = [...act.all.keys()].slice(0, 200);
         }
       }
+      const bys = await bySymbols().catch(() => null);
+      if (bys) out.bybit = ids.filter((id) => bySymbolFor(id, bys)).length;
+      for (const mode of ["demo", "live"]) if (mtCreds(mode)) {
+        const l = await mtSymbols(mode).catch(() => null);
+        if (l) out[`mt5_${mode}`] = ids.filter((id) => mtSymbolFor(id, l)).length;
+      }
       return json(out);
     }
     if (rt === "manage") {
@@ -772,13 +1256,28 @@ Deno.serve(async (req) => {
       const { data: events } = await db.from("viko_auto_events").select("*").order("at", { ascending: false }).limit(60);
       return json({ plans, positions, events, now: Date.now() });
     }
+    if (rt === "limits") {
+      if (req.method === "POST") {
+        const L2 = readLimits(await req.json().catch(() => ({})));
+        await db.from("viko_settings").upsert({ k: "limits", v: L2, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      }
+      const L = await getLimits(db);
+      return json({ limits: L, today: { demo: await usage(db, "demo", L), live: await usage(db, "live", L) } });
+    }
     if (rt === "history") {
       const { data } = await db.from("viko_auto_positions").select("id,plan_id,broker,mode,symbol,label,tf,dir,stake,leverage,entry,pnl,close_reason,opened_at,closed_at,score,below_bar").eq("status", "closed").order("closed_at", { ascending: false }).limit(2e3);
       return json({ rows: data });
     }
     if (rt === "connect") {
-      const broker = url.searchParams.get("broker") === "deriv" ? "deriv" : "binance";
+      const q = url.searchParams.get("broker") ?? "binance";
+      const broker = ["binance", "deriv", "bybit", "mt5"].includes(q) ? q : "binance";
       const mode = url.searchParams.get("mode") === "live" ? "live" : "demo";
+      if (broker === "bybit") return json({ ok: true, broker, mode, balance: r2(await brokerBalance("bybit", mode, null)), currency: "USDT" });
+      if (broker === "mt5") {
+        const a = await mt(mode, "GET", "/account-information");
+        const n = (await mtSymbols(mode)).length;
+        return json({ ok: true, broker, mode, balance: r2(Number(a.freeMargin ?? a.balance ?? 0)), currency: a.currency ?? "USD", account: `${a.broker ?? ""} ${a.server ?? ""} \xB7 ${a.leverage ? `1:${a.leverage}` : ""} \xB7 ${n} symbols`.trim() });
+      }
       if (broker === "binance") {
         const acc = await bn(mode, "GET", "/fapi/v3/account");
         return json({ ok: true, broker, mode, balance: Number(acc.availableBalance), currency: "USDT" });
@@ -822,7 +1321,7 @@ Deno.serve(async (req) => {
     }
     if (rt === "preview" || rt === "start") {
       const cfg = readCfg(b);
-      const needDeriv = cfg.broker !== "binance";
+      const needDeriv = allow(cfg, "deriv");
       let d = null;
       if (needDeriv) d = Deriv.connected() ? await Deriv.open(cfg.mode).catch(async (e) => {
         if (rt === "start") throw e;
@@ -833,24 +1332,24 @@ Deno.serve(async (req) => {
         const exclude = new Set((openAll ?? []).map((x) => String(x.symbol)));
         if (rt === "preview") {
           const pv2 = await preview(db, cfg, exclude, cfg.count, d);
-          return json({ ...pv2, connected: { binance: !!bnCreds(cfg.mode), deriv: Deriv.connected() }, trades: pv2.trades.map(({ _z, _rules, ...t }) => t) });
+          return json({ ...pv2, connected: { binance: !!bnCreds(cfg.mode), deriv: Deriv.connected(), bybit: !!byCreds(cfg.mode), mt5: !!mtCreds(cfg.mode) }, trades: pv2.trades.map(({ _z, _rules, ...t }) => t) });
         }
         const usable = usableBrokers(cfg);
         if (!usable.length) throw new UserError(`${brokerName(cfg.broker)} is not connected for ${cfg.mode} yet. Open Brokers and follow the steps.`);
-        const eff = { ...cfg, broker: usable.length === 2 ? "both" : usable[0] };
+        const eff = { ...cfg, allowed: usable };
         const pv = await preview(db, eff, exclude, cfg.count, d);
         const need = {};
         for (const t of pv.trades) need[t.broker] = (need[t.broker] ?? 0) + t.money;
         for (const [br, amt] of Object.entries(need)) {
-          const bal = br === "binance" ? Number((await bn(cfg.mode, "GET", "/fapi/v3/account")).availableBalance) : Number((await d.send({ balance: 1 }).catch(() => null))?.balance?.balance ?? d.account.balance ?? Infinity);
+          const bal = await brokerBalance(br, cfg.mode, d);
           if (bal < amt) throw new UserError(`Your ${brokerName(br)} ${cfg.mode} balance is ${r2(bal)}, but these trades need ${r2(amt)}. Lower the amount or top up.`);
         }
         if (cfg.picks && !pv.trades.length) throw new UserError(pv.skipped[0] ?? "None of these setups can be placed right now.");
         const hzH = cfg.picks ? pickHours(cfg.picks) : HORIZONS[cfg.horizon].h;
         const now = Date.now();
         const { data: plan } = await db.from("viko_auto_plans").insert({ broker: cfg.broker, mode: cfg.mode, amount: cfg.amount, count: cfg.count, horizon: cfg.horizon, strict: cfg.strict, risk: cfg.risk, alloc: cfg.alloc, custom: cfg.custom, fallback: cfg.fallback, total: totalOf(cfg), ends_at: new Date(now + hzH * 36e5).toISOString(), enter_until: new Date(cfg.picks ? now : now + hzH * 36e5 / 2).toISOString() }).select().single();
-        if (cfg.picks) await event(db, plan.id, null, `You chose ${pv.trades.length} trade${pv.trades.length > 1 ? "s" : ""} on ${brokerName(eff.broker)} (${cfg.mode}), ${r2(totalOf(cfg))} in total. Viko manages the stop-loss and profits and closes anything still open by ${new Date(now + hzH * 36e5).toUTCString().slice(0, 16)}.`);
-        else await event(db, plan.id, null, `Plan started on ${brokerName(eff.broker)} (${cfg.mode}): up to ${cfg.count} trade${cfg.count > 1 ? "s" : ""}, ${r2(totalOf(cfg))} in total, ${hz.name}, ${cfg.strict}%+${cfg.fallback ? " (empty slots may use the best setups below the bar)" : " only"}.`);
+        if (cfg.picks) await event(db, plan.id, null, `You chose ${pv.trades.length} trade${pv.trades.length > 1 ? "s" : ""} on ${usable.map(brokerName).join(" + ")} (${cfg.mode}), ${r2(totalOf(cfg))} in total. Viko manages the stop-loss and profits and closes anything still open by ${new Date(now + hzH * 36e5).toUTCString().slice(0, 16)}.`);
+        else await event(db, plan.id, null, `Plan started on ${usable.map(brokerName).join(" + ")} (${cfg.mode}): up to ${cfg.count} trade${cfg.count > 1 ? "s" : ""}, ${r2(totalOf(cfg))} in total, ${HORIZONS[cfg.horizon]?.name ?? ""}, ${cfg.strict}%+${cfg.fallback ? " (empty slots may use the best setups below the bar)" : " only"}.`);
         let placed = 0;
         for (const t of pv.trades) {
           try {

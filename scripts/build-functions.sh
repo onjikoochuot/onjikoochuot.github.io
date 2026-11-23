@@ -17,7 +17,7 @@ echo "functions built"
 app/node_modules/.bin/esbuild supabase/functions/viko-auto/index.ts --format=esm --platform=neutral --target=es2022 --outfile=supabase/functions/viko-auto/main.js --log-level=warning
 sed -i '1{/edge-runtime.d.ts/d}' supabase/functions/viko-auto/main.js
 # viko-picks and viko-paper ship the same way: bundled locally (market.ts, universe.ts inlined), remote imports left as they are.
-for f in viko-picks viko-paper; do
+for f in viko-picks viko-paper viko-notify; do
   app/node_modules/.bin/esbuild supabase/functions/$f/index.ts --bundle --format=esm --platform=neutral --target=es2022 --external:'jsr:*' --external:'npm:*' --external:'https://*' --outfile=supabase/functions/$f/main.js --log-level=warning
   sed -i '/edge-runtime.d.ts/d' supabase/functions/$f/main.js
 done

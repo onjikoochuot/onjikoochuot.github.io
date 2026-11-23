@@ -27,8 +27,8 @@ const SECTIONS: { id: string; title: string; open?: string; steps: string[] }[] 
     "Paper trading starts with 10,000 practice dollars. Place trades from any chart, pick or High performers row, or switch on the autopilot.",
     "Judge the method on 30 or more trades before trusting it with real money.",
   ] },
-  { id: "brokers", title: "6. Connect Binance and Deriv", open: "brokers", steps: [
-    "Open Brokers. Each tab has the exact steps: Binance (demo at demo.binance.com, real at binance.com) and Deriv (developers.deriv.com).",
+  { id: "brokers", title: "6. Connect your brokers", open: "brokers", steps: [
+    "Open Brokers. Each tab has the exact steps: Binance, Bybit, MT5 (Exness, HFM, FXPesa, XM, IC Markets, Pepperstone or any MetaTrader 5 broker, through MetaApi) and Deriv.",
     "You create an API key or token at the broker and paste it into your Supabase secrets page (link on the Brokers page), never into the app or a chat.",
     "Connect and test the demo first. For real money use keys with trading on and withdrawals off.",
   ] },
@@ -41,8 +41,13 @@ const SECTIONS: { id: string; title: string; open?: string; steps: string[] }[] 
     "Auto-trade → Start: choose the broker, demo or live, the money, how many trades (1 to 20), how to share the money, how long (24 hours to 1 month), how strict and how much risk.",
     "The preview lists each trade and the anticipated minimum profit. Press the button and Viko picks, places and manages the trades for the whole window.",
     "Results adds everything up by day, week, month or year.",
+    "Daily limits (on the Auto-trade page): the most money and the most trades per day, and a loss at which Viko stops for the day (and can close what's open). They apply to Auto-trade and every Real money button.",
   ] },
-  { id: "safety", title: "9. Stay safe", steps: [
+  { id: "alerts", title: "9. Alerts", open: "alerts", steps: [
+    "Open Alerts. Turn on notifications for this phone or computer, and add any of Telegram, WhatsApp, email, ntfy, Discord or Slack. Each has its own short setup and a Send test button.",
+    "Choose what to hear about (trade opened, target 1, trade closed with profit or loss, daily loss limit) and for which accounts (real, demo, paper).",
+  ] },
+  { id: "safety", title: "10. Stay safe", steps: [
     "No method wins every trade. The % is how many rules agree, not a promise. Leverage makes losses as big as profits.",
     "Start on demo, use money you can afford to lose, and keep withdrawals switched off on API keys.",
     "Check your broker is allowed where you live. In Kenya, crypto platforms need a licence under the Virtual Asset Service Providers Act.",
@@ -52,7 +57,7 @@ const SECTIONS: { id: string; title: string; open?: string; steps: string[] }[] 
 export default function Guide({ go }: { go: Go }) {
   return (
     <section className="view guide">
-      <header className="view-head"><div><h2>How to use Viko</h2><p>Version 1. Nine short steps from first install to trading with real money.</p></div></header>
+      <header className="view-head"><div><h2>How to use Viko</h2><p>Version 1.1. Ten short steps from first install to trading with real money.</p></div></header>
       <nav className="guide-toc" aria-label="Guide sections">{SECTIONS.map((s) => <a key={s.id} href={`#guide`} onClick={(e) => { e.preventDefault(); document.getElementById(`g-${s.id}`)?.scrollIntoView({ behavior: "smooth" }); }}>{s.title}</a>)}</nav>
       {SECTIONS.map((s) => (
         <article key={s.id} id={`g-${s.id}`} className="card guide-card">

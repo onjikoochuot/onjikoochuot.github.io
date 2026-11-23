@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fmt } from "../engine/analyze";
+import { BrokerSelect, brokerLabel, curFor } from "../lib/brokers";
+import DailyLimits from "./DailyLimits";
 import { auto, save, store, type AutoCfg, type AutoEvent, type AutoHistory, type AutoPlan, type AutoPosition, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
 
 type Tab = "start" | "running" | "results" | "connect";
@@ -7,7 +9,7 @@ const HORIZONS: [AutoCfg["horizon"], string][] = [["24h", "24 hours"], ["48h", "
 const STRICT = [65, 70, 75, 80, 85, 90, 95, 100];
 const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "about 10% of that trade's money"], ["balanced", "Balanced", "about 20% of that trade's money"], ["bold", "Bold", "about 35% of that trade's money"], ["max", "Max profit", "about 50% of that trade's money (Binance leverage up to 20x, still never past the liquidation point)"]];
 const DEFAULT: AutoCfg = { broker: "both", mode: "demo", amount: 100, count: 3, horizon: "48h", strict: 75, risk: "balanced", alloc: "equal", custom: null, fallback: true };
-const cur = (broker: string) => (broker === "binance" ? "USDT" : "USD");
+const cur = (broker: string) => curFor(broker);
 const money = (x: number | null | undefined, c = "") => (x == null ? "–" : `${x >= 0 ? "" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`);
 const signed = (x: number | null | undefined, c = "") => (x == null ? "–" : `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`);
 const left = (iso: string, now: number) => { const ms = Date.parse(iso) - now; if (ms <= 0) return "now"; const h = ms / 3600000; return h < 1 ? `${Math.round(h * 60)} min` : h < 48 ? `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min` : `${Math.round(h / 24)} days`; };
@@ -19,7 +21,7 @@ export default function AutoTrade({ appKey, onNeedKey, onOpen }: { appKey: strin
   return (
     <section className="view auto">
       <header className="view-head">
-        <div><h2>Auto-trade</h2><p>Choose your money, how long, and how strict. Viko picks the trades, places them on Binance or Deriv, moves the stop-loss as they go, takes profit, and closes everything when your time is up.</p></div>
+        <div><h2>Auto-trade</h2><p>Choose your money, how long, and how strict. Viko picks the trades, places them on your broker (Binance, Bybit, any MT5 broker or Deriv), moves the stop-loss as they go, takes profit, and closes everything when your time is up.</p></div>
       </header>
       <div className="seg picks-tabs" role="tablist">
         {([["start", "Start"], ["running", "Running"], ["results", "Results"], ["connect", "Connect"]] as [Tab, string][]).map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
@@ -50,8 +52,7 @@ const ALLOCS: [AutoCfg["alloc"], string, string][] = [
   ["score", "More on the strongest", "Viko gives more to trades with higher scores and more timeframes agreeing."],
   ["custom", "I'll choose each", "Set the amount for every trade below the preview."],
 ];
-const BROKERS: [AutoCfg["broker"], string][] = [["binance", "Binance"], ["deriv", "Deriv"], ["both", "Both (best fit)"]];
-const curOf = (b: string) => (b === "binance" ? "USDT" : "USD");
+const curOf = curFor;
 
 function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void }) {
   const [cfg, setCfg] = useState<AutoCfg>(() => ({ ...DEFAULT, ...store<Partial<AutoCfg>>("autoCfg2", {}) }));
@@ -81,7 +82,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
   const scale = (t: AutoPreviewTrade) => moneyOf(t) / (t.money || 1);
   const totals = trades.reduce((a, t) => ({ money: a.money + moneyOf(t), loss: a.loss + t.loss * scale(t), p1: a.p1 + t.profit1 * scale(t), p2: a.p2 + t.profit2 * scale(t) }), { money: 0, loss: 0, p1: 0, p2: 0 });
   const planned = cfg.alloc === "each" ? cfg.amount * cfg.count : cfg.alloc === "custom" ? Math.max(cfg.amount, totals.money) : cfg.amount;
-  const notConnected = pv?.connected && (cfg.broker === "both" ? !pv.connected.binance && !pv.connected.deriv : !pv.connected[cfg.broker]);
+  const notConnected = pv?.connected && (cfg.broker === "both" ? !Object.values(pv.connected).some(Boolean) : !pv.connected[cfg.broker]);
 
   const go = async () => {
     setBusy(true); setErr(""); setDone("");
@@ -96,7 +97,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
   return (
     <>
       <div className="card auto-form">
-        <Choice label="Where" value={cfg.broker} options={BROKERS} onChange={(broker) => set({ broker })} help={cfg.broker === "binance" ? "Crypto plus gold, silver, oil, gas, copper and about 200 US stocks and ETFs." : cfg.broker === "deriv" ? "Forex majors, gold, silver, Bitcoin and Ether as multipliers." : "Each trade goes to whichever connected broker offers that market."} />
+        <BrokerSelect label="Where" value={cfg.broker} onChange={(broker) => set({ broker })} />
         <Choice label="Account" value={cfg.mode} options={[["demo", "Demo (practice money)"], ["live", "Live (real money)"]]} onChange={(mode) => { set({ mode }); setAgree(false); }} />
         <div className="auto-field">
           <span className="auto-label">{cfg.alloc === "each" ? "Money per trade" : "Money to invest"}</span>
@@ -118,8 +119,9 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
         <label className="check auto-fallback"><input type="checkbox" checked={cfg.fallback} onChange={(e) => set({ fallback: e.target.checked })} /> If too few trades meet my bar, fill the empty slots with the next best setups (each still passes every must-pass rule and is marked "below your bar").</label>
       </div>
 
+      <DailyLimits appKey={appKey} mode={cfg.mode} />
       <h3 className="pick-sec">What Viko would do now</h3>
-      {notConnected && <p className="ctx-note warn">{BROKERS.find((b) => b[0] === cfg.broker)![1]} isn't connected for {cfg.mode} yet, so this is a preview. Connect it under Brokers to place these trades.</p>}
+      {notConnected && <p className="ctx-note warn">{brokerLabel(cfg.broker)} isn't connected for {cfg.mode} yet, so this is a preview. Connect it under Brokers to place these trades.</p>}
       {loading && <p className="muted">Checking the latest scan, live broker prices and news…</p>}
       {err && <p className="err">{err}</p>}
       {pv && !loading && (
@@ -182,7 +184,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
 }
 
 function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; cfg: AutoCfg; horizon: string; onFix: (p: Partial<AutoCfg>) => void }) {
-  const where = cfg.broker === "binance" ? "Binance" : cfg.broker === "deriv" ? "Deriv" : "Binance or Deriv";
+  const where = cfg.broker === "both" ? "your brokers" : brokerLabel(cfg.broker);
   const steps: [number, string][] = [
     [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${d.examples.join(", ")})` : ""}`],
     [d.time, `of them can reach target 1 within ${horizon}`],
@@ -193,7 +195,7 @@ function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; 
   const fixes: [string, Partial<AutoCfg>][] = [];
   if (!cfg.fallback) fixes.push(["Allow next-best setups", { fallback: true }]);
   if (cfg.strict > 65) fixes.push([`Try ${Math.max(65, cfg.strict - 10)}%+`, { strict: Math.max(65, cfg.strict - 10) }]);
-  if (cfg.broker !== "both") fixes.push(["Use both brokers", { broker: "both" }]);
+  if (cfg.broker !== "both") fixes.push(["Use every broker", { broker: "both" }]);
   if (cfg.horizon !== "72h") fixes.push(["Try 72 hours", { horizon: "72h" }]);
   return (
     <div className="auto-why">
@@ -362,7 +364,8 @@ function Connect({ appKey }: { appKey: string }) {
     <>
       <div className="card">
         <h3>Check your connections</h3>
-        <ul className="auto-tests">{row("binance", "demo", "Binance demo")}{row("binance", "live", "Binance live")}{row("deriv", "demo", "Deriv demo")}{row("deriv", "live", "Deriv real")}</ul>
+        <ul className="auto-tests">{row("binance", "demo", "Binance demo")}{row("binance", "live", "Binance live")}{row("bybit", "demo", "Bybit demo")}{row("bybit", "live", "Bybit live")}{row("mt5", "demo", "MT5 demo")}{row("mt5", "live", "MT5 real")}{row("deriv", "demo", "Deriv demo")}{row("deriv", "live", "Deriv real")}</ul>
+        <p className="sub">Step-by-step setup for every broker is on the Brokers page. Set up alerts for trade opens and closes on the Alerts page.</p>
       </div>
       <div className="card bn-steps">
         <h3>Binance</h3>

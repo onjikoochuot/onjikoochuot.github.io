@@ -165,6 +165,11 @@ async function account(db) {
 async function log(db, trade_id, kind, message) {
   await db.from("viko_paper_events").insert({ trade_id, kind, message });
 }
+async function alert(db, kind, title, body, pnl = null) {
+  await db.from("viko_alerts").insert({ kind, mode: "paper", title, body, pnl }).then(() => {
+  }, () => {
+  });
+}
 var fmt = (x) => Math.abs(x) >= 1e3 ? x.toFixed(2) : Math.abs(x) >= 1 ? x.toFixed(4) : x.toFixed(6);
 async function openTrade(db, acc, b, livePrice) {
   const long = b.dir === "long";
@@ -196,6 +201,7 @@ async function openTrade(db, acc, b, livePrice) {
   const { data, error } = await db.from("viko_paper_trades").insert(row).select().single();
   if (error) throw error;
   await log(db, data.id, "open", `${row.source === "auto" ? "Autopilot opened" : "Opened"} ${row.dir} ${row.label} at ${fmt(entry)}, stop ${fmt(stop)}, target ${fmt(t1)}.`);
+  await alert(db, "open", `Paper ${long ? "buy" : "sell"}: ${row.label}`, `Opened at ${fmt(entry)} (${row.tf}). Stop ${fmt(stop)}, target ${fmt(t1)}.`);
   return data;
 }
 async function closePart(db, t, price, part, reason) {
@@ -209,6 +215,8 @@ async function closePart(db, t, price, part, reason) {
   const { data: acc } = await db.from("viko_paper_account").select("balance").eq("id", "main").single();
   await db.from("viko_paper_account").update({ balance: Number(acc.balance) + pnl }).eq("id", "main");
   Object.assign(t, patch);
+  if (reason === "target1") await alert(db, "t1", `Paper ${t.label}: target 1 hit`, `Half closed at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}). Stop moved to entry.`, pnl);
+  if (done) await alert(db, "close", `Paper ${t.label} closed: ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)}`, `Closed at ${fmt(price)} (${reason === "manual" ? "by you" : reason}). Total result ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)} paper dollars.`, Number(patch.realized));
   await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "stop" ? t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed" : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
 }
 async function manage(db, open) {

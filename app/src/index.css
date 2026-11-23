@@ -592,3 +592,29 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .opp-hide { position: absolute; top: 12px; right: 14px; font-size: 13px; }
 .opp-filters-closed { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; text-align: left; margin-bottom: 12px; cursor: pointer; font: inherit; color: inherit; }
 .opp-filters-closed b { color: var(--brass); white-space: nowrap; }
+/* Daily limits, broker dropdown, alerts */
+.auto-select { background: var(--hull-2); color: var(--foam); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font: 500 14px var(--sans); max-width: 380px; }
+.limits { margin: 14px 0; }
+.limits.hit { border-color: var(--anemone); }
+.limits-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.limits-head .sub { margin-top: 4px; }
+.limits-form { display: grid; gap: 12px; margin-top: 12px; }
+.limits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 14px; }
+.limits-grid.off { opacity: .5; }
+.limits-grid label, .alert-field { display: grid; gap: 4px; font-size: 13px; color: var(--text-2); }
+.limits-grid input, .alert-field input { background: var(--hull-2); border: 1px solid var(--rule); color: var(--foam); border-radius: 6px; padding: 8px 10px; font: 500 14px var(--mono); }
+.alert-what { display: grid; gap: 12px; margin-bottom: 12px; }
+.alert-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; margin: 12px 0; }
+.alert-card { display: grid; gap: 8px; align-content: start; }
+.alert-card.on { border-color: var(--brass); }
+.alert-top { display: flex; justify-content: space-between; align-items: center; }
+.alert-top h3 { margin: 0; }
+.alert-on { font-size: 14px; }
+.alert-fields { display: grid; gap: 8px; }
+.alert-card details summary { cursor: pointer; color: var(--brass); font-size: 13.5px; }
+.alert-devices { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 13.5px; }
+.alert-devices li { display: flex; justify-content: space-between; gap: 8px; }
+.alert-save { position: sticky; bottom: 12px; z-index: 5; display: none; justify-content: space-between; align-items: center; gap: 12px; background: var(--hull-2); border: 1px solid var(--brass); border-radius: 10px; padding: 10px 14px; margin: 12px 0; }
+.alert-save.show { display: flex; }
+.alert-recent { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; font-size: 13.5px; }
+@media (max-width: 760px) { .alert-save { bottom: 72px; } .alert-grid { grid-template-columns: 1fr; } }

@@ -3,12 +3,12 @@ import { fmt } from "../engine/analyze";
 import { auto, save, store, type DerivStatus } from "../lib/api";
 import { BinanceView } from "./Binance";
 
-type Tab = "binance" | "deriv" | "other";
+type Tab = "binance" | "bybit" | "mt5" | "deriv" | "other";
 const SECRETS = "https://supabase.com/dashboard/project/fkrgiaeglingmogcsyik/functions/secrets";
 
 export default function Brokers({ appKey, onNeedKey }: { appKey: string; onNeedKey: () => void }) {
   const [tab, setTab] = useState<Tab>(() => store("brokerTab", "binance"));
-  const [counts, setCounts] = useState<{ total: number; binance_live: number; binance_demo: number; deriv?: number } | null>(null);
+  const [counts, setCounts] = useState<{ total: number; binance_live: number; binance_demo: number; deriv?: number; bybit?: number; mt5_demo?: number; mt5_live?: number } | null>(null);
   useEffect(() => save("brokerTab", tab), [tab]);
   useEffect(() => { auto.markets().then(setCounts).catch(() => {}); }, []);
   return (
@@ -16,14 +16,29 @@ export default function Brokers({ appKey, onNeedKey }: { appKey: string; onNeedK
       <header className="view-head">
         <div>
           <h2>Brokers</h2>
-          <p>Connect the accounts Viko trades for you. Keys live only in your Supabase secrets, never in the app. {counts ? `Of Viko's ${counts.total} markets, Binance can trade ${counts.binance_live} (${counts.binance_demo} on its demo) and Deriv ${counts.deriv ?? "–"}.` : ""}</p>
+          <p>Connect the accounts Viko trades for you. Keys live only in your Supabase secrets, never in the app. {counts ? `Of Viko's ${counts.total} markets, Binance can trade ${counts.binance_live} (${counts.binance_demo} on its demo), Bybit ${counts.bybit ?? "–"}, Deriv ${counts.deriv ?? "–"}${counts.mt5_live ?? counts.mt5_demo ? ` and your MT5 broker ${counts.mt5_live ?? counts.mt5_demo}` : "; MT5 depends on your broker"}.` : ""}</p>
         </div>
       </header>
       <div className="seg picks-tabs" role="tablist">
-        {([["binance", "Binance"], ["deriv", "Deriv"], ["other", "Other brokers"]] as [Tab, string][]).map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
+        {([["binance", "Binance"], ["bybit", "Bybit"], ["mt5", "MT5 (Exness, HFM, FXPesa…)"], ["deriv", "Deriv"], ["other", "Others"]] as [Tab, string][]).map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === "binance" && <BinanceView appKey={appKey} onNeedKey={onNeedKey} embedded />}
       {tab === "deriv" && <DerivPanel appKey={appKey} onNeedKey={onNeedKey} />}
+      {tab === "bybit" && <KeyBroker appKey={appKey} onNeedKey={onNeedKey} broker="bybit" intro="Bybit USDT perpetual futures: Bitcoin, Ether and hundreds of other coins with leverage. Viko places a market order with the stop-loss attached, then take-profit orders for half at target 1 and the rest at target 2." steps={[
+        <><b>Start with the demo.</b> Sign in at <a href="https://www.bybit.com" target="_blank" rel="noreferrer">bybit.com</a>, open your profile menu and switch to <b>Demo Trading</b>. It comes with practice USDT.</>,
+        <>While in Demo Trading: profile → <b>API</b> → <b>Create New Key</b> → <b>System-generated</b>. Permissions: <b>Contract → Orders and Positions</b> (Read-Write). Don't tick withdrawals. Copy the key and the secret.</>,
+        <>On your <a href={SECRETS} target="_blank" rel="noreferrer">Supabase secrets page</a> add <code>BYBIT_DEMO_KEY</code> and <code>BYBIT_DEMO_SECRET</code>.</>,
+        <>Keep the position mode on <b>One-Way</b> (the default) for USDT perpetuals. Then tap <b>Test connection</b> above.</>,
+        <><b>Real money:</b> leave Demo Trading, create a key the same way on your real account, and add it as <code>BYBIT_LIVE_KEY</code> and <code>BYBIT_LIVE_SECRET</code>. Fund your Unified Trading account with USDT (P2P with M-Pesa works). Keys without an IP restriction expire after 3 months on Bybit, so renew them then.</>,
+      ]} note="Bybit doesn't serve every country. If the test says Bybit refused this server's location, use Binance, MT5 or Deriv instead." />}
+      {tab === "mt5" && <KeyBroker appKey={appKey} onNeedKey={onNeedKey} broker="mt5" intro="Any MetaTrader 5 broker: Exness, HFM, FXPesa, XM, IC Markets, Pepperstone, Deriv MT5 and more. Forex, gold, silver, oil, US indices and crypto CFDs. MT5 has no web API of its own, so Viko talks to it through MetaApi, a cloud service that keeps your MT5 account online." steps={[
+        <>Have an MT5 account at your broker (open a <b>demo</b> first). Note its <b>login number</b>, <b>trading password</b> and <b>server name</b> (for example Exness-MT5Trial8).</>,
+        <>Create an account at <a href="https://app.metaapi.cloud" target="_blank" rel="noreferrer">app.metaapi.cloud</a>. MetaApi is a paid service with a free trial; check its pricing page.</>,
+        <>In MetaApi: <b>Accounts</b> → <b>Add account</b> → MetaTrader 5 → enter the login, password and server → <b>Deploy</b>. Copy the <b>account ID</b> and note its <b>region</b> (for example new-york or london).</>,
+        <>In MetaApi: <b>API access</b> → generate an <b>auth token</b> and copy it.</>,
+        <>On your <a href={SECRETS} target="_blank" rel="noreferrer">Supabase secrets page</a> add <code>METAAPI_TOKEN</code>, <code>METAAPI_ACCOUNT_DEMO</code> (the account ID) and, if the region isn't new-york, <code>METAAPI_REGION</code>. Then tap <b>Test connection</b>.</>,
+        <><b>Real money:</b> add your real MT5 account in MetaApi the same way and save its ID as <code>METAAPI_ACCOUNT_LIVE</code>.</>,
+      ]} note="Viko finds your broker's own symbol names (EURUSDm, XAUUSD, US500, USTEC…) and sizes trades in lots. It opens two half positions, each with a stop-loss, so half can close at target 1 and the rest at target 2. MT5 can't withdraw money, but MetaApi does hold your trading password, so only use an account you're comfortable connecting." />}
       {tab === "other" && <OtherBrokers />}
     </section>
   );
@@ -108,16 +123,15 @@ function DerivPanel({ appKey, onNeedKey }: { appKey: string; onNeedKey: () => vo
 }
 
 const OTHERS: [string, string, string][] = [
-  ["Bybit", "Crypto futures with leverage, popular in Kenya, M-Pesa via P2P.", "Has a public trading API similar to Binance, so it is the easiest next broker to add."],
-  ["OKX", "Crypto futures and options.", "Public trading API; can be added the same way as Binance."],
-  ["Exness / HFM / FXPesa (MetaTrader 5)", "Forex, gold, indices and stock CFDs with high leverage.", "MetaTrader has no direct web API. It needs a paid bridge service (for example MetaApi) that you sign up for and connect."],
+  ["OKX", "Crypto futures and options.", "Public trading API; can be added the same way as Bybit."],
+  ["Bitget", "Crypto futures and copy trading.", "Public trading API; same pattern as Bybit."],
   ["Interactive Brokers / Alpaca", "Real stocks and ETFs.", "Both have trading APIs; availability depends on your country."],
 ];
 
 function OtherBrokers() {
   return (
     <>
-      <p className="muted">Version 1 trades on Binance and Deriv. Between them they cover crypto, US stocks and ETFs, gold, silver, oil, gas, copper and the major forex pairs. These are the brokers that can be added next. Tell me which one you use and it goes into the next update.</p>
+      <p className="muted">Viko trades on Binance, Bybit, Deriv and any MetaTrader 5 broker (through MetaApi). Between them they cover crypto, US stocks and ETFs, gold, silver, oil, gas, indices and forex. These can be added next.</p>
       <div className="pick-grid">
         {OTHERS.map(([name, what, how]) => (
           <article key={name} className="card pick">
@@ -135,6 +149,38 @@ function OtherBrokers() {
           <li>You create an API key at the broker (trading on, withdrawals off) and save it in Supabase secrets, exactly as with Binance.</li>
           <li>It then appears under "Where" in Auto-trade and here under Brokers.</li>
         </ol>
+      </div>
+    </>
+  );
+}
+
+/** Connection test plus setup steps for a broker connected with keys in Supabase secrets. */
+function KeyBroker({ appKey, onNeedKey, broker, intro, steps, note }: { appKey: string; onNeedKey: () => void; broker: "bybit" | "mt5"; intro: string; steps: React.ReactNode[]; note: string }) {
+  const [mode, setMode] = useState<"demo" | "live">(() => store(`${broker}Mode`, "demo"));
+  const [res, setRes] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { save(`${broker}Mode`, mode); setRes(null); }, [mode, broker]);
+  const test = async () => {
+    if (!appKey) { onNeedKey(); return; }
+    setBusy(true); setRes(null);
+    try { const j = await auto.connect(appKey, broker, mode); setRes({ ok: true, text: `Connected. Free to trade: ${j.balance.toFixed(2)} ${j.currency}${j.account ? ` · ${j.account}` : ""}.` }); }
+    catch (e) { setRes({ ok: false, text: (e as Error).message }); }
+    setBusy(false);
+  };
+  return (
+    <>
+      <p className="muted">{intro}</p>
+      <div className="seg bn-modes" role="radiogroup" aria-label="Account">{(["demo", "live"] as const).map((m) => <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m === "demo" ? "Demo" : "Real money"}</button>)}</div>
+      <div className="card">
+        <h3>Connection</h3>
+        <button className="btn primary" onClick={test} disabled={busy}>{busy ? "Checking…" : "Test connection"}</button>
+        {res && <p className={res.ok ? "pos-c" : "neg"}>{res.text}</p>}
+      </div>
+      <div className="card bn-steps">
+        <h3>Connect your {broker === "bybit" ? "Bybit" : "MT5"} account</h3>
+        <ol className="install-steps">{steps.map((x, i) => <li key={i}>{x}</li>)}</ol>
+        <p className="ctx-note">{note}</p>
+        <p className="sub">Never paste API keys into chat, email or this app. Only the Supabase secrets page holds them.</p>
       </div>
     </>
   );

@@ -214,10 +214,12 @@ export const AUTO = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-
 export type AutoAlloc = "each" | "equal" | "score" | "custom";
 /** A setup the user chose to trade as it stands (from a chart tip or Today's picks). */
 export type AutoPick = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; name: string; stop: number; target1: number; target2: number; expectBars: number };
-export type AutoCfg = { broker: "binance" | "deriv" | "both"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" | "max"; alloc: AutoAlloc; custom?: Record<string, number> | null; fallback: boolean; picks?: AutoPick[] };
+export type AutoCfg = { broker: "binance" | "deriv" | "bybit" | "mt5" | "both"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" | "max"; alloc: AutoAlloc; custom?: Record<string, number> | null; fallback: boolean; picks?: AutoPick[] };
 export type AutoPreviewTrade = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; agree: number; against: number; opinion: string; stance: string; setup: string; broker: "binance" | "deriv"; brokerSymbol: string; below: boolean; entry: number; stop: number; target1: number; target2: number; money: number; leverage: number; loss: number; profit1: number; profit2: number; hours: [number, number]; newsAgainst?: boolean };
+export type Limits = { on: boolean; money: number | null; trades: number | null; loss: number | null; closeOnLoss: boolean; applies: "live" | "all"; tz: string };
+export type LimitUsage = { applies: boolean; money: number; trades: number; pnl: number; lossHit: boolean; moneyLeft: number | null; tradesLeft: number | null };
 export type AutoDiag = { quality: number; time: number; broker: number; news: number; opinionDropped: number; near: number; examples: string[] };
-export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; total: number; horizon: string; closeBy?: number | null; diag?: AutoDiag; venues?: { binance: number | null; deriv: number | null }; connected?: { binance: boolean; deriv: boolean } };
+export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; total: number; horizon: string; closeBy?: number | null; limits?: { money: number | null; trades: number | null; loss: number | null; used: number; count: number; pnl: number; lossHit: boolean } | null; diag?: AutoDiag; venues?: { binance: number | null; deriv: number | null }; connected?: { binance: boolean; deriv: boolean; bybit?: boolean; mt5?: boolean } };
 export type DerivContract = { id: number; symbol: string; type: string; stake: number; profit: number; spot: number; entry: number; multiplier: number };
 export type DerivStatus = { mode: string; keysSet: boolean; connected: boolean; account?: string; currency?: string; balance?: number; contracts?: DerivContract[] };
 export type AutoPlan = { id: string; created_at: string; broker: string; mode: string; amount: number; count: number; horizon: string; strict: number; risk: string; status: string; ends_at: string; enter_until: string; closed_at: string | null };
@@ -239,5 +241,35 @@ export const auto = {
   connect: (key: string, broker: string, mode: string): Promise<{ ok: true; balance: number; currency: string; account?: string }> => afetch(key, "connect", undefined, `&broker=${broker}&mode=${mode}`),
   derivStatus: (key: string, mode: string): Promise<DerivStatus> => afetch(key, "deriv-status", undefined, `&mode=${mode}`),
   derivClose: (key: string, mode: string, contract_id: number) => afetch(key, "deriv-close", { mode, contract_id }),
-  markets: async (): Promise<{ total: number; binance_demo: number; binance_live: number; deriv?: number; deriv_symbols?: number }> => { const r = await fetch(`${AUTO}/markets?forceFunctionRegion=ap-south-1`); return r.json(); },
+  limits: (key: string, set?: Limits): Promise<{ limits: Limits; today: { demo: LimitUsage; live: LimitUsage } }> => afetch(key, "limits", set),
+  markets: async (): Promise<{ total: number; binance_demo: number; binance_live: number; deriv?: number; deriv_symbols?: number; bybit?: number; mt5_demo?: number; mt5_live?: number }> => { const r = await fetch(`${AUTO}/markets?forceFunctionRegion=ap-south-1`); return r.json(); },
+};
+
+// ---------------- alerts ----------------
+export const NOTIFY = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-notify";
+export type NotifySettings = {
+  events: { open: boolean; t1: boolean; close: boolean; limit: boolean };
+  accounts: { live: boolean; demo: boolean; paper: boolean };
+  push: { on: boolean; devices: { endpoint: string; ua: string; added: string }[] };
+  telegram: { on: boolean; token: string; chat: string };
+  whatsapp: { on: boolean; phone: string; apikey: string };
+  email: { on: boolean; to: string; key: string };
+  ntfy: { on: boolean; topic: string };
+  discord: { on: boolean; url: string };
+  slack: { on: boolean; url: string };
+};
+export type SentAlert = { id: number; at: string; kind: string; mode: string; title: string; sent_at: string | null; result: Record<string, string> | null };
+async function nfetch(key: string, route: string, body?: unknown) {
+  const r = await fetch(`${NOTIFY}/${route}`, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", "x-viko-key": key }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `Alerts request failed (${r.status}).`);
+  return j;
+}
+export const notify = {
+  get: (key: string): Promise<{ settings: NotifySettings; recent: SentAlert[]; pushKey: string }> => nfetch(key, "settings"),
+  save: (key: string, s: Partial<NotifySettings> | Record<string, unknown>): Promise<{ settings: NotifySettings }> => nfetch(key, "settings", s),
+  subscribe: (key: string, sub: PushSubscriptionJSON, ua: string) => nfetch(key, "subscribe", { sub, ua }),
+  unsubscribe: (key: string, endpoint: string) => nfetch(key, "unsubscribe", { endpoint }),
+  test: (key: string, channel?: string): Promise<{ results: Record<string, string> }> => nfetch(key, "test", { channel }),
+  telegramFind: (key: string, token?: string): Promise<{ chat: string; who: string; settings: NotifySettings }> => nfetch(key, "telegram-find", { token }),
 };
