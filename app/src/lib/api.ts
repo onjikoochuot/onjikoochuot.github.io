@@ -1,4 +1,4 @@
-import type { Candle, Tf } from "../engine/types";
+import type { Candle, Setup, Tf } from "../engine/types";
 
 export const API = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-market";
 
@@ -134,4 +134,14 @@ export async function getNews(inst: Instrument, tf: string, technical: { verdict
   if (!r.ok || !j.headlines) throw new Error(j.error ?? "News is unavailable right now.");
   newsCache.set(key, { at: Date.now(), data: j });
   return j;
+}
+
+// ---------- Background picks (scanned every 15 minutes on the server) ----------
+export const PICKS = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-picks";
+export type PickSetup = Omit<Setup, "checks" | "labels"> & { failed: string[] };
+export type PickRow = { symbol: string; tf: Tf; label: string; market: string; price: number; candle_t: number; scanned_at: string; verdict: Setup["verdict"] | null; dir: "long" | "short" | null; score: number | null; hard_fail: boolean | null; triggered: boolean | null; rr1: number | null; setup: PickSetup | null; news_warn: string | null };
+export async function getPicks(): Promise<{ rows: PickRow[]; now: number }> {
+  const r = await fetch(`${PICKS}/list`);
+  if (!r.ok) throw new Error(`Couldn't load today's picks (${r.status}).`);
+  return r.json();
 }

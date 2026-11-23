@@ -12,17 +12,19 @@ import { Backtest, Journal, Rulebook, Scanner } from "./components/Views";
 import TipCard from "./components/TipCard";
 import Paper from "./components/Paper";
 import Markets from "./components/Markets";
+import Picks from "./components/Picks";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
 const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly" };
-const VIEWS = ["analyse", "markets", "paper", "scan", "backtest", "journal", "rules"] as const;
+const VIEWS = ["analyse", "picks", "markets", "paper", "scan", "backtest", "journal", "rules"] as const;
 type View = typeof VIEWS[number];
-const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
+const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
 const viewFromHash = (): View => { const h = location.hash.slice(1) as View; return VIEWS.includes(h) ? h : "analyse"; };
 
 const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const ICONS: Partial<Record<View | "more", string>> = {
   analyse: "M3 17l5-6 4 4 7-9M3 21h18",
+  picks: "M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z",
   markets: "M4 6h16M4 12h16M4 18h10",
   paper: "M5 4h10l4 4v12H5zM14 4v5h5M8 13h8M8 17h5",
   scan: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5",
@@ -248,6 +250,7 @@ export default function App() {
               {setup && <Ledger setup={setup} />}
             </>
           )}
+          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} />}
           {view === "markets" && <Markets list={list} onOpen={open} onToggle={toggle} />}
           {view === "paper" && <Paper appKey={jkey} onNeedKey={() => setSettingsOpen(true)} watchlist={list.map((x) => ({ id: x.id, label: x.label }))} onOpenMarket={openById} />}
           {view === "scan" && <Scanner list={list} tf={tf} onOpen={open} />}
@@ -258,18 +261,18 @@ export default function App() {
       </div>
 
       <nav className="bottom-nav" aria-label="Main">
-        {(["analyse", "markets", "paper", "scan"] as const).map((v) => (
+        {(["analyse", "picks", "paper", "markets"] as const).map((v) => (
           <a key={v} href={`#${v}`} className={view === v ? "on" : ""} aria-current={view === v ? "page" : undefined} onClick={() => go(v)}>
-            <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : VIEW_LABEL[v]}</span>
+            <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : v === "picks" ? "Picks" : VIEW_LABEL[v]}</span>
           </a>
         ))}
-        <button className={["backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
+        <button className={["scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
       </nav>
 
       {moreOpen && (
         <div className="modal sheet-modal" role="dialog" aria-modal="true" aria-label="More" onClick={() => setMoreOpen(false)}>
           <div className="sheet bottom" onClick={(e) => e.stopPropagation()}>
-            {(["backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
+            {(["scan", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
             <button className="sheet-item" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}>Settings</button>
           </div>
         </div>
