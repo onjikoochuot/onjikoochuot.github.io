@@ -5,7 +5,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { candles, sha256, type Tf } from "./market.ts";
 // @ts-ignore engine bundle, pinned to a commit (built by scripts/build-functions.sh)
-import { analyze } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@88c0125e6ef6a9e257973c407a790946864fe7a0/supabase/functions/viko-paper/engine.js";
+import { analyze } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@fec83d8b75830fe4206c677782bda3bea961569d/supabase/functions/viko-paper/engine.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -46,7 +46,8 @@ Deno.serve(async (req) => {
   const route = new URL(req.url).pathname.split("/").filter(Boolean).pop();
 
   if (route === "list") {
-    const { data, error } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(Date.now() - 2 * 86400000).toISOString());
+    const { data, error } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(Date.now() - 2 * 86400000).toISOString())
+      .or("verdict.eq.APPROVED,and(hard_fail.eq.false,score.gte.55)"); // only rows the screens use
     if (error) return json({ error: error.message }, 500);
     return json({ rows: data, now: Date.now() }, 200, { "Cache-Control": "public, max-age=60" });
   }
