@@ -3,7 +3,7 @@ import type { Setup, Tf } from "../engine/types";
 import { fmt } from "../engine/analyze";
 import { duration, makeTip, TF_HOURS } from "../engine/layman";
 import type { BnTradeIdea } from "./Binance";
-import { getPicks, getQuotes, paper, save, store, type PickRow, type Quote } from "../lib/api";
+import { getPicks, getQuotes, paper, save, store, type AutoPick, type PickRow, type Quote } from "../lib/api";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
 const TF_NAME: Record<Tf, string> = { "5m": "5-min", "15m": "15-min", "30m": "30-min", "1h": "1-hour", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly", "1M": "monthly" };
@@ -27,7 +27,10 @@ function isFresh(r: PickRow, now: number) {
 
 export const ideaOf = (r: PickRow, price?: number): BnTradeIdea => ({ symbol: r.symbol, label: r.label, dir: r.setup!.dir, entry: price ?? r.setup!.entry, stop: r.setup!.stop, target1: r.setup!.target1, target2: r.setup!.target2, setup: `${r.setup!.name} (${r.setup!.degree}), ${r.tf}`, score: r.setup!.score });
 
-export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onBinance }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onBinance: (i: BnTradeIdea) => void }) {
+export const pickOf = (r: PickRow): AutoPick => { const s = r.setup!; return { symbol: r.symbol, label: r.label, market: r.market, tf: r.tf, dir: s.dir, score: s.score, name: `${s.name} (${s.degree})`, stop: s.stop, target1: s.target1, target2: s.target2, expectBars: s.expectBars ?? 3 }; };
+type Sel = { has: (r: PickRow) => boolean; toggle: (r: PickRow) => void };
+
+export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onReal }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onBinance?: (i: BnTradeIdea) => void; onReal: (p: AutoPick[]) => void }) {
   const [rows, setRows] = useState<PickRow[]>([]);
   const [now, setNow] = useState(Date.now());
   const [err, setErr] = useState("");
@@ -36,6 +39,9 @@ export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onB
   const [bar, setBar] = useState<Bar>(() => store("picksBar", 95));
   const [msg, setMsg] = useState("");
   const [placing, setPlacing] = useState("");
+  const [picked, setPicked] = useState<Record<string, PickRow>>({});
+  const sel: Sel = { has: (r) => !!picked[r.symbol + r.tf], toggle: (r) => setPicked((m) => { const k = r.symbol + r.tf, n = { ...m }; if (n[k]) delete n[k]; else n[k] = r; return n; }) };
+  const chosen = Object.values(picked);
 
   const load = async () => {
     try { const j = await getPicks(); setRows(j.rows); setNow(Date.now()); setErr(""); }
@@ -67,7 +73,7 @@ export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onB
       <header className="view-head">
         <div>
           <h2>Today's picks</h2>
-          <p>Viko checks all 77 markets on all 8 timeframes in the background, every 15 minutes, and keeps only the setups the books approve. {lastScan ? `Last check ${ago(now - lastScan)}.` : ""}</p>
+          <p>Viko checks all 373 markets on all 9 timeframes in the background, every 15 minutes, and keeps only the setups the books approve. Tick the ones you like and trade them together with real money. {lastScan ? `Last check ${ago(now - lastScan)}.` : ""}</p>
         </div>
         <div className="picks-bar">
           <span>Only show</span>
@@ -88,9 +94,15 @@ export default function Picks({ appKey, onNeedKey, account, riskPct, onOpen, onB
       {msg && <p className="ok-msg">{msg}</p>}
       {loading && <p className="muted">Loading the latest scan…</p>}
 
-      {!loading && tab === "top" && <TopPicks onBinance={onBinance} list={approved(bar)} below={bar > 80 ? approved(80).filter((r) => r.score! < bar) : []} bar={bar} now={now} account={account} riskPct={riskPct} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
+      {!loading && tab === "top" && <TopPicks sel={sel} onReal={onReal} list={approved(bar)} below={bar > 80 ? approved(80).filter((r) => r.score! < bar) : []} bar={bar} now={now} account={account} riskPct={riskPct} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
       {!loading && tab === "combined" && <Combined fresh={fresh} onOpen={onOpen} />}
-      {!loading && tab === "day" && <DayPlan onBinance={onBinance} fresh={fresh} bar={bar} now={now} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
+      {chosen.length > 0 && (
+        <div className="sel-bar" role="region" aria-label="Selected picks">
+          <span><b>{chosen.length}</b> selected: {chosen.map((r) => r.label).join(", ")}</span>
+          <span className="pick-btns"><button className="btn" onClick={() => setPicked({})}>Clear</button><button className="btn primary" onClick={() => onReal(chosen.map(pickOf))}>Trade {chosen.length === 1 ? "it" : `all ${chosen.length}`} with real money</button></span>
+        </div>
+      )}
+      {!loading && tab === "day" && <DayPlan onReal={onReal} fresh={fresh} bar={bar} now={now} onOpen={onOpen} onPaper={paperIt} placing={placing} />}
     </section>
   );
 }
@@ -130,12 +142,13 @@ function NewsWarn({ r }: { r: PickRow }) {
   return <p className="pick-warn">Big news first: {m ? m[1] : r.news_warn}{at ? ` at ${at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : ""}. Wait until it's out.</p>;
 }
 
-function TopPicks({ onBinance, list, below, bar, now, account, riskPct, onOpen, onPaper, placing }: { list: PickRow[]; below: PickRow[]; bar: Bar; now: number; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string; onBinance: (i: BnTradeIdea) => void }) {
+function TopPicks({ sel, onReal, list, below, bar, now, account, riskPct, onOpen, onPaper, placing }: { list: PickRow[]; below: PickRow[]; bar: Bar; now: number; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string; sel: Sel; onReal: (p: AutoPick[]) => void }) {
   const card = (r: PickRow, dim = false) => {
     const tip = makeTip(toSetup(r), r.label, r.tf, Math.floor(now / 1000), account, riskPct);
     return (
-      <article key={r.symbol + r.tf} className={`card pick ${dim ? "dim" : ""}`}>
+      <article key={r.symbol + r.tf} className={`card pick ${dim ? "dim" : ""} ${sel.has(r) ? "picked" : ""}`}>
         <PickHead r={r} />
+        <label className="check pick-sel"><input type="checkbox" checked={sel.has(r)} onChange={() => sel.toggle(r)} /> Select to trade with others</label>
         <Levels r={r} />
         <NewsWarn r={r} />
         <ol className="tip-steps">{tip.steps.slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ol>
@@ -143,8 +156,8 @@ function TopPicks({ onBinance, list, below, bar, now, account, riskPct, onOpen, 
           <span className="sub">Checked {ago(now - Date.parse(r.scanned_at))} at {fmt(r.price)}</span>
           <span className="pick-btns">
             <button className="btn" onClick={() => onOpen(r.symbol, r.tf)}>Open chart</button>
-            {r.market === "Crypto" && <button className="btn bn-btn" onClick={() => onBinance(ideaOf(r))}>Binance</button>}
-            <button className="btn primary" onClick={() => onPaper(r)} disabled={placing === r.symbol + r.tf}>{placing === r.symbol + r.tf ? "Placing…" : "Paper trade"}</button>
+            <button className="btn" onClick={() => onPaper(r)} disabled={placing === r.symbol + r.tf}>{placing === r.symbol + r.tf ? "Placing…" : "Paper trade"}</button>
+            <button className="btn primary" onClick={() => onReal([pickOf(r)])}>Real money</button>
           </span>
         </div>
       </article>
@@ -252,7 +265,7 @@ function Combined({ fresh, onOpen }: { fresh: PickRow[]; onOpen: (id: string, tf
   );
 }
 
-function DayPlan({ onBinance, fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow[]; bar: Bar; now: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string; onBinance: (i: BnTradeIdea) => void }) {
+function DayPlan({ onReal, fresh, bar, now, onOpen, onPaper, placing }: { fresh: PickRow[]; bar: Bar; now: number; onOpen: (id: string, tf: Tf) => void; onPaper: (r: PickRow) => void; placing: string; onReal: (p: AutoPick[]) => void }) {
   const [amount, setAmount] = useState<number>(() => store("dayAmount", 10000));
   const [cur, setCur] = useState<string>(() => store("dayCur", "KES"));
   const [count, setCount] = useState<number>(() => store("dayCount", 2));
@@ -320,6 +333,7 @@ function DayPlan({ onBinance, fresh, bar, now, onOpen, onPaper, placing }: { fre
             <div><span className="sub">If every trade reaches target 1</span><b className="pos-c mono">+{money(first)}</b></div>
             <div><span className="sub">If they run to target 2</span><b className="pos-c mono">+{money(best)}</b></div>
             <div><span className="sub">If every stop-loss is hit</span><b className="neg mono">−{money(worst)}</b></div>
+            <div><button className="btn primary" onClick={() => onReal(plans.filter((p) => !p.broken).map((p) => pickOf(p.r)))}>Trade this plan with real money</button></div>
           </div>
           <div className="pick-grid">
             {plans.map(({ r, s, loss, p1, p2, live, moved, broken, window }, i) => (
@@ -339,8 +353,8 @@ function DayPlan({ onBinance, fresh, bar, now, onOpen, onPaper, placing }: { fre
                   <span className="sub">Pick {i + 1} of {plans.length}</span>
                   <span className="pick-btns">
                     <button className="btn" onClick={() => onOpen(r.symbol, r.tf)}>Open chart</button>
-                    {r.market === "Crypto" && !broken && <button className="btn bn-btn" onClick={() => onBinance(ideaOf(r, live))}>Binance</button>}
-                    <button className="btn primary" onClick={() => onPaper(r)} disabled={placing === r.symbol + r.tf}>{placing === r.symbol + r.tf ? "Placing…" : "Practise on paper"}</button>
+                    <button className="btn" onClick={() => onPaper(r)} disabled={placing === r.symbol + r.tf}>{placing === r.symbol + r.tf ? "Placing…" : "Practise on paper"}</button>
+                    {!broken && <button className="btn primary" onClick={() => onReal([pickOf(r)])}>Real money</button>}
                   </span>
                 </div>
               </article>

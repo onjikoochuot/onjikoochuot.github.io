@@ -15,6 +15,8 @@ import Markets from "./components/Markets";
 import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
 import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
+import RealTrade from "./components/RealTrade";
+import type { AutoPick } from "./lib/api";
 import Brokers from "./components/Brokers";
 import Guide from "./components/Guide";
 
@@ -58,6 +60,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [bnIdea, setBnIdea] = useState<BnTradeIdea | null>(null);
+  const [realPicks, setRealPicks] = useState<AutoPick[] | null>(null);
   const [account, setAccount] = useState<number>(() => store("account", 10000));
   const [riskPct, setRiskPct] = useState<number>(() => store("risk", 1));
   const [jkey, setJkey] = useState<string>(() => store("jkey", ""));
@@ -199,7 +202,8 @@ export default function App() {
 
   const liveText = status === "live" ? "Live" : status === "polling" ? "Live, every 30 s" : "Connecting";
   const lastPrice = candles.length ? candles[candles.length - 1].c : analysis?.last.c;
-  const tipEl = tip && <TipCard tip={tip} onPaper={canPaper ? paperTrade : undefined} paperLabel={setup?.verdict === "APPROVED" ? "Paper trade this" : "Practise this on paper"} busy={placing} />;
+  const realTrade = () => setup && setRealPicks([{ symbol: inst.id, label: inst.label, market: inst.market, tf, dir: setup.dir, score: setup.score, name: `${setup.name} (${setup.degree})`, stop: setup.stop, target1: setup.target1, target2: setup.target2, expectBars: setup.expectBars ?? 3 }]);
+  const tipEl = tip && <TipCard tip={tip} onPaper={canPaper ? paperTrade : undefined} onReal={canPaper ? realTrade : undefined} paperLabel={setup?.verdict === "APPROVED" ? "Paper trade this" : "Practise this on paper"} busy={placing} />;
 
   return (
     <div className="app">
@@ -288,7 +292,7 @@ export default function App() {
               {setup && <Ledger setup={setup} />}
             </>
           )}
-          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} onBinance={setBnIdea} />}
+          {view === "picks" && <Picks appKey={jkey} onNeedKey={() => setSettingsOpen(true)} account={account} riskPct={riskPct} onOpen={(id, t) => { setTf(t); openById(id); }} onBinance={setBnIdea} onReal={setRealPicks} />}
           {view === "auto" && <AutoTrade appKey={jkey} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t as Tf); openById(id); }} />}
           {view === "brokers" && <Brokers appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "guide" && <Guide go={go} />}
@@ -319,6 +323,7 @@ export default function App() {
         </div>
       )}
 
+      {realPicks && <RealTrade picks={realPicks} appKey={jkey} onClose={() => setRealPicks(null)} onNeedKey={() => { setRealPicks(null); setSettingsOpen(true); }} onWatch={() => { setRealPicks(null); save("autoTab", "running"); go("auto"); }} />}
       {bnIdea && <BinanceTicket idea={bnIdea} appKey={jkey} onClose={() => setBnIdea(null)} onNeedKey={() => { setBnIdea(null); setSettingsOpen(true); }} />}
       {ticket && lastPrice !== undefined && analysis && (
         <OrderTicket side={ticket} label={inst.label} price={lastPrice} atr={analysis.ind.atr[analysis.ind.atr.length - 1]} setup={setup} account={account} riskPct={riskPct} busy={placing} onClose={() => setTicket(null)} onPlace={placeOrder} />

@@ -279,13 +279,35 @@ async function derivActive(d) {
   return dvActive;
 }
 const dvSymbolFor = (id, act) => derivCandidates(id).find((c) => act.all.has(c)) ?? null;
+function readPicks(x) {
+  if (!Array.isArray(x) || !x.length) return null;
+  const out = [];
+  for (const p of x.slice(0, 20)) {
+    const symbol = String(p?.symbol ?? "");
+    if (!/^(crypto|yahoo):[A-Za-z0-9.=^\-]{1,24}$/.test(symbol) || !(String(p.tf) in TF_H)) continue;
+    const n = (v) => Number(v);
+    const q = { symbol, label: String(p.label ?? symbol).slice(0, 40), market: String(p.market ?? "").slice(0, 20), tf: String(p.tf), dir: p.dir === "short" ? "short" : "long", score: Math.round(n(p.score) || 0), name: String(p.name ?? "Chosen setup").slice(0, 60), stop: n(p.stop), target1: n(p.target1), target2: n(p.target2), expectBars: Math.max(1, n(p.expectBars) || 3) };
+    if (![q.stop, q.target1, q.target2].every((v) => v > 0)) continue;
+    if (!out.some((o) => o.symbol === q.symbol)) out.push(q);
+  }
+  return out.length ? out : null;
+}
+const PICK_MIN_H = 24, PICK_MAX_H = 400 * 24;
+const pickHours = (picks) => Math.min(PICK_MAX_H, Math.max(PICK_MIN_H, ...picks.map((p) => p.expectBars * TF_H[p.tf] * 1.6)));
 function readCfg(b) {
   const broker = b.broker === "deriv" ? "deriv" : b.broker === "both" ? "both" : "binance";
   const alloc = ["each", "equal", "score", "custom"].includes(b.alloc) ? b.alloc : "equal";
   const custom = b.custom && typeof b.custom === "object" ? Object.fromEntries(Object.entries(b.custom).map(([k, v]) => [String(k), Math.max(0, Number(v))]).filter(([, v]) => Number(v) > 0)) : null;
-  const cfg = { broker, mode: b.mode === "live" ? "live" : "demo", amount: Number(b.amount), count: Math.min(20, Math.max(1, Math.round(Number(b.count) || 1))), horizon: String(b.horizon), strict: Math.min(100, Math.max(65, Math.round(Number(b.strict) || 75))), risk: String(b.risk), alloc, custom, fallback: b.fallback !== false };
+  const picks = readPicks(b.picks);
+  const cfg = { broker, mode: b.mode === "live" ? "live" : "demo", amount: Number(b.amount), count: Math.min(20, Math.max(1, Math.round(Number(b.count) || 1))), horizon: String(b.horizon), strict: Math.min(100, Math.max(65, Math.round(Number(b.strict) || 75))), risk: String(b.risk), alloc, custom, fallback: b.fallback !== false, picks };
   if (!(cfg.amount > 0)) throw new UserError("Enter how much to invest.");
-  if (!HORIZONS[cfg.horizon]) throw new UserError("Pick a time window.");
+  if (b.picks && !picks) throw new UserError("Those setups are missing their stop-loss or targets. Open the chart again and retry.");
+  if (picks) {
+    cfg.count = picks.length;
+    cfg.horizon = "pick";
+    cfg.fallback = false;
+    cfg.strict = Math.max(0, Math.min(...picks.map((p) => p.score)));
+  } else if (!HORIZONS[cfg.horizon]) throw new UserError("Pick a time window.");
   if (!RISK[cfg.risk]) cfg.risk = "balanced";
   return cfg;
 }
@@ -323,16 +345,16 @@ function route(id, cfg, v) {
   return null;
 }
 async function candidates(db, cfg, v, exclude, want) {
-  const hz = HORIZONS[cfg.horizon];
+  const hz2 = HORIZONS[cfg.horizon];
   const now = Date.now();
-  const { data } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(now - 3 * 36e5 - (hz.h > 100 ? 4 * 864e5 : 0)).toISOString());
+  const { data } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(now - 3 * 36e5 - (hz2.h > 100 ? 4 * 864e5 : 0)).toISOString());
   const rows = (data ?? []).filter((r) => fresh(r, now) && r.setup);
   const by = /* @__PURE__ */ new Map();
   for (const r of rows) by.set(r.symbol, [...by.get(r.symbol) ?? [], r]);
   const lean = (r) => r.setup && !r.hard_fail && (r.score ?? 0) >= 55 ? r.dir : null;
   const atBar = (r) => (r.score ?? 0) >= cfg.strict && (r.verdict === "APPROVED" || cfg.strict < 80 && r.verdict === "WATCH" && r.triggered && !r.hard_fail && (r.rr1 ?? 0) >= 2);
   const nearBar = (r) => !atBar(r) && (r.score ?? 0) >= 55 && !r.hard_fail && r.triggered && (r.rr1 ?? 0) >= 1.5 && r.verdict !== "NO TRADE";
-  const fitsTime = (r) => hz.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6 <= hz.h;
+  const fitsTime = (r) => hz2.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6 <= hz2.h;
   const newsSoon = (r) => {
     const m = String(r.news_warn ?? "").match(/is due (\S+)$/);
     const at = m ? Date.parse(m[1]) : NaN;
@@ -371,10 +393,48 @@ async function candidates(db, cfg, v, exclude, want) {
   if (out.length < want) await take(near);
   return Object.assign(out, { diag });
 }
+async function chosen(cfg, v, exclude) {
+  const out = [], skipped = [];
+  const list = cfg.picks.filter((p) => {
+    if (exclude.has(p.symbol)) {
+      skipped.push(`${p.label} already has an open trade, so it was left out.`);
+      return false;
+    }
+    return true;
+  });
+  const views = await Promise.all(list.map((p) => newsView({ symbol: p.symbol, label: p.label, market: p.market, tf: p.tf, verdict: p.score >= 80 ? "APPROVED" : "WATCH", dir: p.dir, score: p.score, setup: { name: p.name }, price: 0 })));
+  list.forEach((p, i) => {
+    const venue = route(p.symbol, cfg, v);
+    if (!venue) {
+      skipped.push(`${p.label} can't be traded on ${brokerName(cfg.broker)}${cfg.broker !== "binance" && v.dv ? " right now (market closed or not offered)" : ""}.`);
+      return;
+    }
+    const nv = views[i];
+    const against = nv.stance === "bullish" && p.dir === "short" || nv.stance === "bearish" && p.dir === "long";
+    out.push({
+      symbol: p.symbol,
+      label: p.label,
+      market: p.market,
+      tf: p.tf,
+      dir: p.dir,
+      score: p.score,
+      agree: 0,
+      against: 0,
+      venue,
+      price: 0,
+      opinion: nv.text,
+      stance: nv.stance ?? "neutral",
+      newsAgainst: against,
+      setup: { name: p.name, degree: p.tf, stop: p.stop, target1: p.target1, target2: p.target2, expectBars: p.expectBars }
+    });
+  });
+  return Object.assign(out, { diag: { chosen: cfg.picks.length }, skippedPre: skipped });
+}
 async function size(cfg, r, d, v) {
   const s = r.setup, long = r.dir === "long", target = RISK[cfg.risk];
   const venue = r.venue;
   const src = await sourcePrice(r.symbol) ?? r.price;
+  if (!src) return { skip: `${r.label}: no live price right now.` };
   let live;
   if (venue.broker === "binance") live = await bnMark(cfg.mode, venue.sym).catch(() => null);
   else live = d ? await d.spot(venue.sym) : null;
@@ -411,9 +471,9 @@ function allocate(cfg, trades) {
 }
 async function preview(db, cfg, exclude, want, d) {
   const v = await venues(cfg, d);
-  const picks = await candidates(db, cfg, v, exclude, want + 4);
+  const picks = cfg.picks ? await chosen(cfg, v, exclude) : await candidates(db, cfg, v, exclude, want + 4);
   const diag = picks.diag;
-  const trades = [], skipped = [];
+  const trades = [], skipped = [...picks.skippedPre ?? []];
   for (const r of picks) {
     if (trades.length >= want) break;
     const z = await size(cfg, r, d, v).catch((e) => ({ skip: `${r.label}: ${e.message}` }));
@@ -433,7 +493,8 @@ async function preview(db, cfg, exclude, want, d) {
       below: !!r.below,
       opinion: r.opinion,
       stance: r.stance,
-      setup: `${r.setup.name} (${r.setup.degree})`,
+      newsAgainst: !!r.newsAgainst,
+      setup: cfg.picks ? `${r.setup.name}, ${r.tf}` : `${r.setup.name} (${r.setup.degree})`,
       broker: z.broker,
       brokerSymbol: z.sym,
       entry: z.live,
@@ -459,7 +520,8 @@ async function preview(db, cfg, exclude, want, d) {
   }
   const ok = trades.filter((t) => !t.tooSmall);
   skipped.push(...trades.filter((t) => t.tooSmall).map((t) => t.tooSmall));
-  return { trades: ok, skipped, horizon: HORIZONS[cfg.horizon].name, total: totalOf(cfg), diag, venues: { binance: v.bn ? v.bn.size : null, deriv: v.dv ? v.dv.open.size : null } };
+  const pickH = cfg.picks ? pickHours(cfg.picks) : 0;
+  return { trades: ok, skipped, horizon: cfg.picks ? "until the targets or stop are hit" : HORIZONS[cfg.horizon].name, closeBy: cfg.picks ? Date.now() + pickH * 36e5 : null, total: totalOf(cfg), diag, venues: { binance: v.bn ? v.bn.size : null, deriv: v.dv ? v.dv.open.size : null } };
 }
 async function place(db, cfg, plan_id, t, d) {
   const long = t.dir === "long";
@@ -520,6 +582,7 @@ function usableBrokers(cfg) {
   return want.filter((b) => b === "binance" ? !!bnCreds(cfg.mode) : Deriv.connected());
 }
 async function fill(db, plan, d) {
+  if (plan.horizon === "pick") return 0;
   const cfg = planCfg(plan);
   const usable = usableBrokers(cfg);
   if (!usable.length) return 0;
@@ -641,7 +704,7 @@ async function manageAll(db, opts) {
       }
       if (ending) {
         await db.from("viko_auto_plans").update({ status: opts.endPlan === plan.id ? "stopped" : "done", closed_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", plan.id);
-        await event(db, plan.id, null, opts.endPlan === plan.id ? "You collected this plan. All its trades are closed." : `The ${HORIZONS[plan.horizon]?.name ?? ""} window has ended. All trades are closed.`);
+        await event(db, plan.id, null, opts.endPlan === plan.id ? "You collected this plan. All its trades are closed." : plan.horizon === "pick" ? "Viko's time estimate for these trades has passed. Anything still open is now closed." : `The ${HORIZONS[plan.horizon]?.name ?? ""} window has ended. All trades are closed.`);
         continue;
       }
       if (opts.fillPlans && Date.now() < Date.parse(plan.enter_until)) {
@@ -782,10 +845,12 @@ Deno.serve(async (req) => {
           const bal = br === "binance" ? Number((await bn(cfg.mode, "GET", "/fapi/v3/account")).availableBalance) : Number((await d.send({ balance: 1 }).catch(() => null))?.balance?.balance ?? d.account.balance ?? Infinity);
           if (bal < amt) throw new UserError(`Your ${brokerName(br)} ${cfg.mode} balance is ${r2(bal)}, but these trades need ${r2(amt)}. Lower the amount or top up.`);
         }
-        const hz = HORIZONS[cfg.horizon];
+        if (cfg.picks && !pv.trades.length) throw new UserError(pv.skipped[0] ?? "None of these setups can be placed right now.");
+        const hzH = cfg.picks ? pickHours(cfg.picks) : HORIZONS[cfg.horizon].h;
         const now = Date.now();
-        const { data: plan } = await db.from("viko_auto_plans").insert({ broker: cfg.broker, mode: cfg.mode, amount: cfg.amount, count: cfg.count, horizon: cfg.horizon, strict: cfg.strict, risk: cfg.risk, alloc: cfg.alloc, custom: cfg.custom, fallback: cfg.fallback, total: totalOf(cfg), ends_at: new Date(now + hz.h * 36e5).toISOString(), enter_until: new Date(now + hz.h * 36e5 / 2).toISOString() }).select().single();
-        await event(db, plan.id, null, `Plan started on ${brokerName(eff.broker)} (${cfg.mode}): up to ${cfg.count} trade${cfg.count > 1 ? "s" : ""}, ${r2(totalOf(cfg))} in total, ${hz.name}, ${cfg.strict}%+${cfg.fallback ? " (empty slots may use the best setups below the bar)" : " only"}.`);
+        const { data: plan } = await db.from("viko_auto_plans").insert({ broker: cfg.broker, mode: cfg.mode, amount: cfg.amount, count: cfg.count, horizon: cfg.horizon, strict: cfg.strict, risk: cfg.risk, alloc: cfg.alloc, custom: cfg.custom, fallback: cfg.fallback, total: totalOf(cfg), ends_at: new Date(now + hzH * 36e5).toISOString(), enter_until: new Date(cfg.picks ? now : now + hzH * 36e5 / 2).toISOString() }).select().single();
+        if (cfg.picks) await event(db, plan.id, null, `You chose ${pv.trades.length} trade${pv.trades.length > 1 ? "s" : ""} on ${brokerName(eff.broker)} (${cfg.mode}), ${r2(totalOf(cfg))} in total. Viko manages the stop-loss and profits and closes anything still open by ${new Date(now + hzH * 36e5).toUTCString().slice(0, 16)}.`);
+        else await event(db, plan.id, null, `Plan started on ${brokerName(eff.broker)} (${cfg.mode}): up to ${cfg.count} trade${cfg.count > 1 ? "s" : ""}, ${r2(totalOf(cfg))} in total, ${hz.name}, ${cfg.strict}%+${cfg.fallback ? " (empty slots may use the best setups below the bar)" : " only"}.`);
         let placed = 0;
         for (const t of pv.trades) {
           try {
@@ -795,7 +860,7 @@ Deno.serve(async (req) => {
             await event(db, plan.id, null, e.message);
           }
         }
-        if (placed < cfg.count) await event(db, plan.id, null, `${placed ? `${placed} placed now.` : "Nothing qualifies right now."} Viko keeps checking every 5 minutes and fills the rest until ${new Date(Date.parse(plan.enter_until)).toUTCString().slice(0, 22)} UTC.`);
+        if (placed < cfg.count && !cfg.picks) await event(db, plan.id, null, `${placed ? `${placed} placed now.` : "Nothing qualifies right now."} Viko keeps checking every 5 minutes and fills the rest until ${new Date(Date.parse(plan.enter_until)).toUTCString().slice(0, 22)} UTC.`);
         return json({ ok: true, plan_id: plan.id, placed, skipped: pv.skipped });
       } finally {
         d?.close();
