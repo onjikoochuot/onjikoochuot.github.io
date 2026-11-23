@@ -20,8 +20,8 @@ function newsSteps(news: NewsContext | undefined, s: Setup | null, tfHours: numb
   return out;
 }
 
-export const TF_HOURS: Record<Tf, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168 };
-const TF_WORD: Record<Tf, string> = { "5m": "5-minute", "15m": "15-minute", "30m": "30-minute", "1h": "hourly", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly" };
+export const TF_HOURS: Record<Tf, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
+const TF_WORD: Record<Tf, string> = { "5m": "5-minute", "15m": "15-minute", "30m": "30-minute", "1h": "hourly", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly", "1M": "monthly" };
 
 export function duration(hours: number): string {
   if (hours < 1) return `${Math.max(5, Math.round(hours * 60 / 5) * 5)} minutes`;

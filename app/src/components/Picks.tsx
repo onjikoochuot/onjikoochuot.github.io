@@ -5,8 +5,8 @@ import { duration, makeTip, TF_HOURS } from "../engine/layman";
 import type { BnTradeIdea } from "./Binance";
 import { getPicks, getQuotes, paper, save, store, type PickRow, type Quote } from "../lib/api";
 
-const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
-const TF_NAME: Record<Tf, string> = { "5m": "5-min", "15m": "15-min", "30m": "30-min", "1h": "1-hour", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly" };
+const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
+const TF_NAME: Record<Tf, string> = { "5m": "5-min", "15m": "15-min", "30m": "30-min", "1h": "1-hour", "2h": "2-hour", "4h": "4-hour", "1d": "daily", "1w": "weekly", "1M": "monthly" };
 const DAY_TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h"];
 type Tab = "top" | "combined" | "day";
 type Bar = 95 | 90 | 80;
@@ -21,7 +21,7 @@ const lean = (r?: PickRow) => (r && r.setup && !r.hard_fail && (r.score ?? 0) >=
 function isFresh(r: PickRow, now: number) {
   const h = TF_HOURS[r.tf];
   if (now - Date.parse(r.scanned_at) > Math.max(45 * 60000, 2 * h * 3600000)) return false;
-  const quiet = r.tf === "1w" ? 10 * 86400 : r.tf === "1d" ? 4 * 86400 : 3 * h * 3600 + 20 * 60;
+  const quiet = r.tf === "1M" ? 40 * 86400 : r.tf === "1w" ? 10 * 86400 : r.tf === "1d" ? 4 * 86400 : 3 * h * 3600 + 20 * 60;
   return now / 1000 - r.candle_t <= quiet;
 }
 

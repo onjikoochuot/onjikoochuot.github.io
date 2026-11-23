@@ -16,8 +16,8 @@ import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
 import { BinanceTicket, BinanceView, type BnTradeIdea } from "./components/Binance";
 
-const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
-const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly" };
+const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
+const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly", "1M": "Monthly" };
 const VIEWS = ["analyse", "picks", "auto", "paper", "markets", "binance", "scan", "backtest", "journal", "rules"] as const;
 type View = typeof VIEWS[number];
 const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", auto: "Auto-trade", binance: "Binance", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
@@ -370,9 +370,10 @@ function Countdown({ tf, crypto }: { tf: Tf; crypto: boolean }) {
   const sec = TF_HOURS[tf] * 3600;
   if (!crypto && sec >= 86400) return null;
   const offset = tf === "1w" ? 4 * 86400 : 0; // weekly bars open Monday 00:00 UTC; the Unix epoch was a Thursday
-  const left = Math.ceil(sec - ((now / 1000 - offset) % sec));
+  const d = new Date(now), nextMonth = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000;
+  const left = tf === "1M" ? Math.ceil(nextMonth - now / 1000) : Math.ceil(sec - ((now / 1000 - offset) % sec));
   const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), s = left % 60;
-  const txt = tf === "1w" ? `${Math.floor(left / 86400)}d ${Math.floor((left % 86400) / 3600)}h` : h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  const txt = tf === "1w" || tf === "1M" ? `${Math.floor(left / 86400)}d ${Math.floor((left % 86400) / 3600)}h` : h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
   return <span className="countdown">candle closes in <span className="mono">{txt}</span></span>;
 }
 

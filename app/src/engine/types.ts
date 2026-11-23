@@ -1,6 +1,6 @@
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
 export type Dir = "long" | "short";
-export type Tf = "5m" | "15m" | "30m" | "1h" | "2h" | "4h" | "1d" | "1w";
+export type Tf = "5m" | "15m" | "30m" | "1h" | "2h" | "4h" | "1d" | "1w" | "1M";
 
 export type Pivot = { i: number; p: number; kind: "H" | "L"; provisional?: boolean };
 

@@ -14,22 +14,9 @@ const CORS = {
 };
 const json = (b: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json", ...extra } });
-const TF_HOURS: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168 };
+const TF_HOURS: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
 
-const c = (s: string) => [`crypto:${s}USDT`, `${s}/USDT`, "Crypto"];
-const st = (s: string) => [`yahoo:${s}`, s.replace(".JO", ""), "Stocks"];
-const ix = (s: string, l: string) => [`yahoo:${s}`, l, "Indices"];
-const fx = (p: string) => [`yahoo:${p}=X`, `${p.slice(0, 3)}/${p.slice(3)}`, "Forex"];
-const cm = (s: string, l: string) => [`yahoo:${s}`, l, "Commodities"];
-const UNIVERSE: string[][] = [
-  ...["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "LINK", "DOT", "LTC", "TRX", "TON", "NEAR", "ATOM", "UNI", "XLM", "BCH", "SUI", "PEPE"].map(c),
-  ...["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "NFLX", "JPM", "V", "MA", "KO", "DIS", "BA", "XOM", "COIN", "PLTR", "UBER", "NPN.JO", "MTN.JO", "SBK.JO"].map(st),
-  ix("SPY", "SPY"), ix("QQQ", "QQQ"), ix("DIA", "DIA"), ix("IWM", "IWM"), ix("^GSPC", "S&P 500"), ix("^NDX", "Nasdaq 100"), ix("^DJI", "Dow Jones"),
-  ix("^FTSE", "FTSE 100"), ix("^GDAXI", "DAX"), ix("^N225", "Nikkei 225"), ix("^HSI", "Hang Seng"),
-  ...["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY", "USDZAR", "USDKES"].map(fx),
-  cm("GC=F", "Gold"), cm("SI=F", "Silver"), cm("CL=F", "Crude oil"), cm("BZ=F", "Brent"), cm("NG=F", "Natural gas"), cm("HG=F", "Copper"),
-  cm("PL=F", "Platinum"), cm("ZC=F", "Corn"), cm("ZW=F", "Wheat"), cm("KC=F", "Coffee"),
-];
+import { UNIVERSE } from "./universe.ts";
 
 type CalEvent = { title: string; currency: string; impact: string; at: number };
 async function calendar(): Promise<CalEvent[]> {
@@ -73,7 +60,7 @@ Deno.serve(async (req) => {
     const tf = String(b.tf) as Tf;
     if (!(tf in TF_HOURS)) return json({ error: "bad tf" }, 400);
     // Batches keep each run inside the edge runtime's CPU and memory limits.
-    const parts = Math.min(20, Math.max(1, Number(b.parts ?? 1)));
+    const parts = Math.min(40, Math.max(1, Number(b.parts ?? 1)));
     const part = Math.min(parts - 1, Math.max(0, Number(b.part ?? 0)));
     const size = Math.ceil(UNIVERSE.length / parts);
     const slice = UNIVERSE.slice(part * size, part * size + size);

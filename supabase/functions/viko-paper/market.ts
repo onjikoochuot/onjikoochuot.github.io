@@ -1,6 +1,6 @@
 // Shared market-data helpers (Binance + Yahoo). Copied into each function at deploy time.
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
-export const TF = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"] as const;
+export const TF = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"] as const;
 export type Tf = typeof TF[number];
 export const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 
@@ -22,7 +22,7 @@ export async function yahoo(sym: string, tf: Tf): Promise<Candle[]> {
   // Yahoo intraday limits: 5-30m bars go back 60 days, hourly 730 days. 2h and 4h are built from hourly bars.
   const cfg: Record<Tf, [string, string, number]> = {
     "5m": ["5m", "60d", 0], "15m": ["15m", "60d", 0], "30m": ["30m", "60d", 0], "1h": ["60m", "730d", 0],
-    "2h": ["60m", "730d", 7200], "4h": ["60m", "730d", 14400], "1d": ["1d", "10y", 0], "1w": ["1wk", "max", 0],
+    "2h": ["60m", "730d", 7200], "4h": ["60m", "730d", 14400], "1d": ["1d", "10y", 0], "1w": ["1wk", "max", 0], "1M": ["1mo", "max", 0],
   };
   const [iv, range, bucketSec] = cfg[tf];
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${iv}&range=${range}&includePrePost=false`;

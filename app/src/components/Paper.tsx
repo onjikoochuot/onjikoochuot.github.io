@@ -4,7 +4,7 @@ import { paper, type PaperState, type PaperTrade } from "../lib/api";
 import { useQuotes } from "../lib/live";
 
 const money = (x: number) => `${x < -0.004 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const TFS = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"];
+const TFS = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
 
 function unrealized(t: PaperTrade, price: number) {
   return (t.dir === "long" ? price - t.entry : t.entry - price) * t.qty_open;

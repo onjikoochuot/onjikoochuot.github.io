@@ -4,7 +4,7 @@ import { auto, save, store, type AutoCfg, type AutoEvent, type AutoHistory, type
 
 type Tab = "start" | "running" | "results" | "connect";
 const HORIZONS: [AutoCfg["horizon"], string][] = [["24h", "24 hours"], ["48h", "48 hours"], ["72h", "72 hours"], ["1w", "1 week"], ["1m", "1 month"]];
-const STRICT = [80, 85, 90, 95];
+const STRICT = [65, 70, 75, 80, 85, 90, 95, 100];
 const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "lose about 10% of a trade's money if its stop is hit"], ["balanced", "Balanced", "about 20%"], ["bold", "Bold", "about 35%"]];
 const DEFAULT: AutoCfg = { broker: "binance", mode: "demo", amount: 100, count: 2, horizon: "48h", strict: 85, risk: "balanced" };
 const cur = (broker: string) => (broker === "binance" ? "USDT" : "USD");
@@ -85,7 +85,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
         </div>
         <Choice label="Number of trades" value={cfg.count} options={[[1, "1"], [2, "2"], [3, "3"]]} onChange={(count) => set({ count })} help={`${money(cfg.amount / cfg.count, c)} each`} />
         <Choice label="Come back in" value={cfg.horizon} options={HORIZONS} onChange={(horizon) => set({ horizon })} />
-        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help="Share of the book rules that must agree. Higher means fewer, cleaner trades." />
+        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help={cfg.strict < 80 ? "Below 80% is practice level: the books don't fully approve these setups. Viko still requires every must-pass rule, a fired entry signal and a reward at least twice the risk." : "Share of the book rules that must agree. 80% and up means the books approve the trade. Higher means fewer, cleaner trades."} />
         <Choice label="Risk" value={cfg.risk} options={RISKS.map(([v, l]) => [v, l] as [AutoCfg["risk"], string])} onChange={(risk) => set({ risk })} help={`Sets the leverage so a trade that hits its stop-loss loses ${RISKS.find((r) => r[0] === cfg.risk)![2]}.`} />
       </div>
 
@@ -96,6 +96,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
         pv.trades.length === 0 ? (
           <div className="empty-pick">
             <h3>Nothing meets {cfg.strict}% for {pv.horizon} right now</h3>
+            {pv.diag && <Why d={pv.diag} cfg={cfg} horizon={pv.horizon} onFix={set} />}
             <p>You can still start. Viko will keep checking every 5 minutes for the first half of your window and enter as soon as a setup meets your bar. If none appears, your money is never used.</p>
             {pv.skipped.length > 0 && <p className="sub">{pv.skipped.join(" ")}</p>}
           </div>
@@ -145,6 +146,29 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
         </button>
       </div>
     </>
+  );
+}
+
+function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; cfg: AutoCfg; horizon: string; onFix: (p: Partial<AutoCfg>) => void }) {
+  const where = cfg.broker === "binance" ? "Binance (crypto only)" : "Deriv";
+  const steps: [number, string][] = [
+    [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${d.examples.join(", ")})` : ""}`],
+    [d.time, `of them can reach target 1 within ${horizon}`],
+    [d.broker, `of those can be traded on ${where}`],
+    [d.news, "have no big news due"],
+  ];
+  const stop = steps.findIndex(([n]) => n === 0);
+  const fixes: [string, Partial<AutoCfg>][] = [];
+  if (stop === 0 && cfg.strict > 65) fixes.push([`Try ${Math.max(65, cfg.strict - 10)}%+`, { strict: Math.max(65, cfg.strict - 10) }]);
+  if (stop === 1) { if (cfg.horizon !== "1m") fixes.push(["Try 1 month", { horizon: "1m" }]); if (cfg.horizon !== "24h") fixes.push(["Try 24 hours", { horizon: "24h" }]); }
+  if (stop === 2 && d.otherBroker > 0) fixes.push([`Try ${cfg.broker === "binance" ? "Deriv" : "Binance"} (${d.otherBroker} fit)`, { broker: cfg.broker === "binance" ? "deriv" : "binance" }]);
+  return (
+    <div className="auto-why">
+      <p className="sub">Why: Viko narrowed today's picks step by step.</p>
+      <ol>{steps.map(([n, t], i) => <li key={i} className={i === stop ? "stop" : i > stop && stop >= 0 ? "dim" : ""}><b className="mono">{n}</b> {t}</li>)}</ol>
+      {d.opinionDropped > 0 && <p className="sub">{d.opinionDropped} more were dropped because the news opinion goes against them.</p>}
+      {fixes.length > 0 && <div className="auto-fixes">{fixes.map(([l, p]) => <button key={l} className="btn" onClick={() => onFix(p)}>{l}</button>)}</div>}
+    </div>
   );
 }
 

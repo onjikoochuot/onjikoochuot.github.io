@@ -517,3 +517,9 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .pl-bar i { display: block; height: 100%; } .pl-bar i.up { background: var(--kelp); } .pl-bar i.down { background: var(--anemone); }
 .auto-tests { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
 @media (max-width: 640px) { .auto-form { grid-template-columns: 1fr; } .pl-bar { width: 50px; } }
+.auto-why { margin: 8px 0 12px; }
+.auto-why ol { margin: 6px 0; padding-left: 20px; font-size: 14px; line-height: 1.6; }
+.auto-why li.stop { color: var(--anemone); font-weight: 500; }
+.auto-why li.dim { opacity: .45; }
+.auto-why b { margin-right: 4px; }
+.auto-fixes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

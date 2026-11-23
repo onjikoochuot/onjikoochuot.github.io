@@ -19,7 +19,7 @@ const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 class UserError extends Error {}
 
-const TF_H: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168 };
+const TF_H: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
 const HORIZONS: Record<string, { h: number; tfs: string[]; name: string }> = {
   "24h": { h: 24, tfs: ["15m", "30m", "1h", "2h"], name: "24 hours" },
   "48h": { h: 48, tfs: ["30m", "1h", "2h", "4h"], name: "48 hours" },
@@ -163,7 +163,7 @@ class Deriv {
 type Cfg = { broker: Broker; mode: Mode; amount: number; count: number; horizon: string; strict: number; risk: string };
 function readCfg(b: any): Cfg {
   const broker: Broker = b.broker === "deriv" ? "deriv" : "binance";
-  const cfg = { broker, mode: (b.mode === "live" ? "live" : "demo") as Mode, amount: Number(b.amount), count: Math.min(3, Math.max(1, Math.round(Number(b.count) || 1))), horizon: String(b.horizon), strict: Math.min(100, Math.max(80, Math.round(Number(b.strict) || 80))), risk: String(b.risk) };
+  const cfg = { broker, mode: (b.mode === "live" ? "live" : "demo") as Mode, amount: Number(b.amount), count: Math.min(3, Math.max(1, Math.round(Number(b.count) || 1))), horizon: String(b.horizon), strict: Math.min(100, Math.max(65, Math.round(Number(b.strict) || 80))), risk: String(b.risk) };
   if (!(cfg.amount > 0)) throw new UserError("Enter how much to invest.");
   if (!HORIZONS[cfg.horizon]) throw new UserError("Pick a time window.");
   if (!RISK[cfg.risk]) cfg.risk = "balanced";
@@ -172,7 +172,7 @@ function readCfg(b: any): Cfg {
 function fresh(r: any, now: number) {
   const h = TF_H[r.tf];
   if (now - Date.parse(r.scanned_at) > Math.max(45 * 60000, 2 * h * 3600000)) return false;
-  const quiet = r.tf === "1w" ? 10 * 86400 : r.tf === "1d" ? 4 * 86400 : 3 * h * 3600 + 20 * 60;
+  const quiet = r.tf === "1M" ? 40 * 86400 : r.tf === "1w" ? 10 * 86400 : r.tf === "1d" ? 4 * 86400 : 3 * h * 3600 + 20 * 60;
   return now / 1000 - r.candle_t <= quiet;
 }
 async function newsView(r: any) {
@@ -185,16 +185,20 @@ async function newsView(r: any) {
 async function candidates(db: DB, cfg: Cfg, exclude: Set<string>, want: number) {
   const hz = HORIZONS[cfg.horizon];
   const now = Date.now();
-  const { data } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,rr1,setup,news_warn").gt("scanned_at", new Date(now - 3 * 3600000 - (hz.h > 100 ? 4 * 86400000 : 0)).toISOString());
+  const { data } = await db.from("viko_picks").select("symbol,tf,label,market,price,candle_t,scanned_at,verdict,dir,score,hard_fail,triggered,rr1,setup,news_warn").gt("scanned_at", new Date(now - 3 * 3600000 - (hz.h > 100 ? 4 * 86400000 : 0)).toISOString());
   const rows = (data ?? []).filter((r: any) => fresh(r, now));
   const by = new Map<string, any[]>();
   for (const r of rows) by.set(r.symbol, [...(by.get(r.symbol) ?? []), r]);
   const lean = (r: any) => (r.setup && !r.hard_fail && (r.score ?? 0) >= 55 ? r.dir : null);
-  const pool = rows.filter((r: any) =>
-    hz.tfs.includes(r.tf) && r.verdict === "APPROVED" && (r.score ?? 0) >= cfg.strict && !r.news_warn && r.setup &&
-    (r.setup.expectBars ?? 3) * TF_H[r.tf] <= hz.h * 0.8 && !exclude.has(r.symbol) &&
-    (cfg.broker === "binance" ? r.market === "Crypto" : derivSymbol(r.symbol) !== null),
-  ).map((r: any) => {
+  // Quality: 80%+ means the book approved it. Below 80 (practice levels) also accepts triggered, rule-clean setups with 2R+.
+  const quality = (r: any) => r.setup && (r.score ?? 0) >= cfg.strict && (r.verdict === "APPROVED" || (cfg.strict < 80 && r.verdict === "WATCH" && r.triggered && !r.hard_fail && (r.rr1 ?? 0) >= 2));
+  const fitsTime = (r: any) => hz.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] <= hz.h * 0.8;
+  const brokerOk = (r: any) => (cfg.broker === "binance" ? r.market === "Crypto" : derivSymbol(r.symbol) !== null);
+  const s1 = rows.filter(quality), s2 = s1.filter(fitsTime), s3 = s2.filter(brokerOk), s4 = s3.filter((r: any) => !r.news_warn && !exclude.has(r.symbol));
+  const diag: any = { quality: new Set(s1.map((r: any) => r.symbol)).size, time: new Set(s2.map((r: any) => r.symbol)).size, broker: new Set(s3.map((r: any) => r.symbol)).size, news: new Set(s4.map((r: any) => r.symbol)).size, opinionDropped: 0,
+    otherBroker: new Set(s2.filter((r: any) => (cfg.broker === "binance" ? derivSymbol(r.symbol) !== null : r.market === "Crypto")).map((r: any) => r.symbol)).size,
+    examples: s1.slice(0, 6).map((r: any) => `${r.label} ${r.tf} (${r.score}%)`) };
+  const pool = s4.map((r: any) => {
     const others = (by.get(r.symbol) ?? []).filter((x) => x.tf !== r.tf && ALL_TFS.includes(x.tf));
     const agree = others.filter((x) => lean(x) === r.dir).length, against = others.filter((x) => lean(x) && lean(x) !== r.dir).length;
     return { ...r, agree, against, rank: r.score + 4 * agree - 8 * against + Math.min(4, r.rr1 ?? 0) * 2 };
@@ -205,11 +209,11 @@ async function candidates(db: DB, cfg: Cfg, exclude: Set<string>, want: number) 
     seen.add(r.symbol);
     const nv = await newsView(r);
     const opposed = (nv.stance === "bullish" && r.dir === "short") || (nv.stance === "bearish" && r.dir === "long");
-    if (opposed) continue;
+    if (opposed) { diag.opinionDropped++; continue; }
     out.push({ ...r, opinion: nv.text, stance: nv.stance ?? "neutral" });
     if (out.length >= want) break;
   }
-  return out;
+  return Object.assign(out, { diag });
 }
 
 /** Turn a pick into concrete broker terms (leverage or multiplier, amounts). Uses live broker prices. */
@@ -245,6 +249,7 @@ async function size(cfg: Cfg, r: any, money: number, d: Deriv | null) {
 async function preview(db: DB, cfg: Cfg, exclude = new Set<string>(), want?: number, d: Deriv | null = null) {
   const n = want ?? cfg.count;
   const picks = await candidates(db, cfg, exclude, n + 3);
+  const diag = (picks as any).diag;
   const money = r2(cfg.amount / cfg.count);
   const trades: any[] = [], skipped: string[] = [];
   for (const r of picks) {
@@ -259,7 +264,7 @@ async function preview(db: DB, cfg: Cfg, exclude = new Set<string>(), want?: num
       hours: [r2((r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6), r2((r.setup.expectBars ?? 3) * TF_H[r.tf] * 1.6)], _z: z,
     });
   }
-  return { trades, skipped, money, horizon: HORIZONS[cfg.horizon].name };
+  return { trades, skipped, money, horizon: HORIZONS[cfg.horizon].name, diag };
 }
 
 // ======================= placing =======================

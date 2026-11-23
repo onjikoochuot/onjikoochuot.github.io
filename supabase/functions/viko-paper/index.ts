@@ -18,7 +18,7 @@ const CORS = {
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 type DB = ReturnType<typeof createClient>;
 const MAX_OPEN = 8;
-const TF_HOURS: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168 };
+const TF_HOURS: Record<string, number> = { "5m": 1 / 12, "15m": 0.25, "30m": 0.5, "1h": 1, "2h": 2, "4h": 4, "1d": 24, "1w": 168, "1M": 730 };
 const ALL_TFS = Object.keys(TF_HOURS);
 
 // Economic calendar (ForexFactory weekly feed), used to keep the autopilot out of trades right before big news.

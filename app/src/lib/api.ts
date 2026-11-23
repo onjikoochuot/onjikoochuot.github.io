@@ -29,6 +29,36 @@ export const CATALOG: Instrument[] = [
   M("GC=F", "Gold", "Gold futures"), M("SI=F", "Silver", "Silver futures"), M("CL=F", "Crude oil", "WTI crude futures"), M("BZ=F", "Brent", "Brent crude futures"),
   M("NG=F", "Natural gas", "Natural gas futures"), M("HG=F", "Copper", "Copper futures"), M("PL=F", "Platinum", "Platinum futures"),
   M("ZC=F", "Corn", "Corn futures"), M("ZW=F", "Wheat", "Wheat futures"), M("KC=F", "Coffee", "Coffee futures"),
+  // ---- more crypto ----
+  C("AAVE", "Aave"), C("ARB", "Arbitrum"), C("OP", "Optimism"), C("APT", "Aptos"), C("INJ", "Injective"), C("FIL", "Filecoin"), C("ICP", "Internet Computer"),
+  C("HBAR", "Hedera"), C("VET", "VeChain"), C("ALGO", "Algorand"), C("ETC", "Ethereum Classic"), C("SHIB", "Shiba Inu"), C("WIF", "dogwifhat"), C("BONK", "Bonk"),
+  C("FET", "Fetch.ai"), C("RENDER", "Render"), C("TIA", "Celestia"), C("SEI", "Sei"), C("STX", "Stacks"), C("IMX", "Immutable"), C("LDO", "Lido DAO"),
+  C("GRT", "The Graph"), C("SAND", "The Sandbox"), C("MANA", "Decentraland"), C("AXS", "Axie Infinity"), C("CRV", "Curve"), C("RUNE", "THORChain"), C("JUP", "Jupiter"),
+  C("PYTH", "Pyth"), C("ENA", "Ethena"), C("WLD", "Worldcoin"), C("TAO", "Bittensor"), C("ONDO", "Ondo"), C("FLOKI", "Floki"), C("TRUMP", "Official Trump"), C("ZEC", "Zcash"), C("XMR", "Monero"),
+  // ---- more stocks ----
+  S("ADBE", "Adobe"), S("CRM", "Salesforce"), S("ORCL", "Oracle"), S("INTC", "Intel"), S("QCOM", "Qualcomm"), S("CSCO", "Cisco"), S("IBM", "IBM"), S("SHOP", "Shopify"),
+  S("PYPL", "PayPal"), S("ABNB", "Airbnb"), S("SNOW", "Snowflake"), S("MU", "Micron"), S("ASML", "ASML"), S("TSM", "TSMC"), S("BABA", "Alibaba"), S("PDD", "PDD Holdings"),
+  S("NIO", "NIO"), S("JD", "JD.com"), S("SONY", "Sony"), S("TM", "Toyota"), S("NKE", "Nike"), S("MCD", "McDonald's"), S("SBUX", "Starbucks"), S("WMT", "Walmart"),
+  S("COST", "Costco"), S("HD", "Home Depot"), S("TGT", "Target"), S("PG", "Procter & Gamble"), S("JNJ", "Johnson & Johnson"), S("PFE", "Pfizer"), S("MRK", "Merck"),
+  S("LLY", "Eli Lilly"), S("ABBV", "AbbVie"), S("UNH", "UnitedHealth"), S("CVX", "Chevron"), S("COP", "ConocoPhillips"), S("BAC", "Bank of America"), S("WFC", "Wells Fargo"),
+  S("GS", "Goldman Sachs"), S("MS", "Morgan Stanley"), S("C", "Citigroup"), S("BRK-B", "Berkshire Hathaway"), S("T", "AT&T"), S("VZ", "Verizon"), S("F", "Ford"), S("GM", "General Motors"),
+  S("RIVN", "Rivian"), S("MSTR", "Strategy (MicroStrategy)"), S("HOOD", "Robinhood"), S("SOFI", "SoFi"), S("RBLX", "Roblox"), S("SPOT", "Spotify"), S("ARM", "Arm Holdings"),
+  S("SMCI", "Super Micro"), S("DELL", "Dell"),
+  S("NED.JO", "Nedbank (JSE)"), S("FSR.JO", "FirstRand (JSE)"), S("CPI.JO", "Capitec (JSE)"), S("SHP.JO", "Shoprite (JSE)"), S("SOL.JO", "Sasol (JSE)"), S("AGL.JO", "Anglo American (JSE)"),
+  S("GFI.JO", "Gold Fields (JSE)"), S("ANG.JO", "AngloGold Ashanti (JSE)"), S("IMP.JO", "Impala Platinum (JSE)"), S("VOD.JO", "Vodacom (JSE)"), S("BTI.JO", "British American Tobacco (JSE)"),
+  // ---- more indices and ETFs ----
+  I("^IXIC", "Nasdaq", "Nasdaq Composite"), I("^RUT", "Russell 2000", "US small caps"), I("^STOXX50E", "Euro Stoxx 50", "Eurozone"), I("^FCHI", "CAC 40", "Paris"),
+  I("^AXJO", "ASX 200", "Sydney"), I("^NSEI", "Nifty 50", "India"), I("^BSESN", "Sensex", "India"), I("^KS11", "KOSPI", "Seoul"), I("^GSPTSE", "TSX", "Toronto"), I("^BVSP", "Bovespa", "São Paulo"),
+  I("GLD", "GLD", "Gold ETF"), I("SLV", "SLV", "Silver ETF"), I("TLT", "TLT", "20+ year US bonds ETF"), I("EEM", "EEM", "Emerging markets ETF"), I("XLE", "XLE", "Energy stocks ETF"),
+  I("XLF", "XLF", "Financial stocks ETF"), I("XLK", "XLK", "Tech stocks ETF"), I("ARKK", "ARKK", "ARK Innovation ETF"), I("VTI", "VTI", "Total US market ETF"), I("IBIT", "IBIT", "Bitcoin ETF"),
+  // ---- more forex ----
+  F("EURCHF", "Euro / Franc"), F("EURAUD", "Euro / Aussie"), F("EURCAD", "Euro / Loonie"), F("GBPCHF", "Pound / Franc"), F("GBPAUD", "Pound / Aussie"), F("AUDJPY", "Aussie / Yen"),
+  F("CADJPY", "Loonie / Yen"), F("CHFJPY", "Franc / Yen"), F("NZDJPY", "Kiwi / Yen"), F("AUDNZD", "Aussie / Kiwi"), F("USDMXN", "US dollar / Peso"), F("USDTRY", "US dollar / Lira"),
+  F("USDINR", "US dollar / Rupee"), F("USDNGN", "US dollar / Naira"), F("USDEGP", "US dollar / Egyptian pound"), F("USDGHS", "US dollar / Cedi"), F("USDUGX", "US dollar / Ugandan shilling"),
+  F("USDTZS", "US dollar / Tanzanian shilling"), F("USDCNH", "US dollar / Yuan"), F("USDSGD", "US dollar / Singapore dollar"), F("USDSEK", "US dollar / Krona"), F("USDNOK", "US dollar / Krone"), F("USDPLN", "US dollar / Zloty"),
+  // ---- more commodities ----
+  M("PA=F", "Palladium", "Palladium futures"), M("HO=F", "Heating oil", "Heating oil futures"), M("RB=F", "Gasoline", "Gasoline futures"), M("ZS=F", "Soybeans", "Soybean futures"),
+  M("SB=F", "Sugar", "Sugar futures"), M("CC=F", "Cocoa", "Cocoa futures"), M("CT=F", "Cotton", "Cotton futures"), M("LE=F", "Live cattle", "Live cattle futures"), M("OJ=F", "Orange juice", "Orange juice futures"),
 ];
 export const MARKETS: Market[] = ["Crypto", "Stocks", "Indices", "Forex", "Commodities"];
 const pick = (ids: string[]) => ids.map((id) => CATALOG.find((x) => x.id === id)!).filter(Boolean);
@@ -60,7 +90,7 @@ export async function getCandles(symbol: string, tf: Tf, fresh = false): Promise
   return j.candles;
 }
 
-export const HTF: Record<Tf, Tf | null> = { "5m": "1h", "15m": "1h", "30m": "4h", "1h": "4h", "2h": "1d", "4h": "1d", "1d": "1w", "1w": null };
+export const HTF: Record<Tf, Tf | null> = { "5m": "1h", "15m": "1h", "30m": "4h", "1h": "4h", "2h": "1d", "4h": "1d", "1d": "1w", "1w": "1M", "1M": null };
 
 export async function searchSymbols(q: string): Promise<Instrument[]> {
   const out: Instrument[] = [];
@@ -171,7 +201,8 @@ export const binance = {
 export const AUTO = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-auto";
 export type AutoCfg = { broker: "binance" | "deriv"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" };
 export type AutoPreviewTrade = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; agree: number; against: number; opinion: string; stance: string; setup: string; entry: number; stop: number; target1: number; target2: number; money: number; leverage: number; loss: number; profit1: number; profit2: number; hours: [number, number] };
-export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; money: number; horizon: string };
+export type AutoDiag = { quality: number; time: number; broker: number; news: number; opinionDropped: number; otherBroker: number; examples: string[] };
+export type AutoPreview = { trades: AutoPreviewTrade[]; skipped: string[]; money: number; horizon: string; diag?: AutoDiag };
 export type AutoPlan = { id: string; created_at: string; broker: string; mode: string; amount: number; count: number; horizon: string; strict: number; risk: string; status: string; ends_at: string; enter_until: string; closed_at: string | null };
 export type AutoPosition = { id: string; plan_id: string; broker: string; mode: string; symbol: string; label: string; tf: string; dir: string; setup: string; score: number; opinion: string | null; stake: number; leverage: number; entry: number; stop: number; initial_stop: number; target1: number; target2: number; t1_hit: boolean; status: string; opened_at: string; closed_at: string | null; pnl: number | null; close_reason: string | null; last_price: number | null; last_pnl: number | null };
 export type AutoEvent = { id: number; at: string; plan_id: string | null; message: string };
