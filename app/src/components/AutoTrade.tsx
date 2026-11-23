@@ -85,7 +85,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
         </div>
         <Choice label="Number of trades" value={cfg.count} options={[[1, "1"], [2, "2"], [3, "3"]]} onChange={(count) => set({ count })} help={`${money(cfg.amount / cfg.count, c)} each`} />
         <Choice label="Come back in" value={cfg.horizon} options={HORIZONS} onChange={(horizon) => set({ horizon })} />
-        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help={cfg.strict < 80 ? "Below 80% is practice level: the books don't fully approve these setups. Viko still requires every must-pass rule, a fired entry signal and a reward at least twice the risk." : "Share of the book rules that must agree. 80% and up means the books approve the trade. Higher means fewer, cleaner trades."} />
+        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, s === 100 ? "100%" : `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help={cfg.strict < 80 ? "Below 80% is practice level: the books don't fully approve these setups. Viko still requires every must-pass rule, a fired entry signal and a reward at least twice the risk." : "Share of the book rules that must agree. 80% and up means the books approve the trade. Higher means fewer, cleaner trades."} />
         <Choice label="Risk" value={cfg.risk} options={RISKS.map(([v, l]) => [v, l] as [AutoCfg["risk"], string])} onChange={(risk) => set({ risk })} help={`Sets the leverage so a trade that hits its stop-loss loses ${RISKS.find((r) => r[0] === cfg.risk)![2]}.`} />
       </div>
 
@@ -152,7 +152,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
 function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; cfg: AutoCfg; horizon: string; onFix: (p: Partial<AutoCfg>) => void }) {
   const where = cfg.broker === "binance" ? "Binance (crypto only)" : "Deriv";
   const steps: [number, string][] = [
-    [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${d.examples.join(", ")})` : ""}`],
+    [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${[...new Map(d.examples.map((e) => [e.replace(/ \S+ \(\d+%\)$/, ""), e])).values()].join(", ")})` : ""}`],
     [d.time, `of them can reach target 1 within ${horizon}`],
     [d.broker, `of those can be traded on ${where}`],
     [d.news, "have no big news due"],
