@@ -112,13 +112,15 @@ async function closePart(db: DB, t: any, price: number, part: number, reason: st
   await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "trailing" ? "trailing stop hit, profit locked in" : reason === "stop" ? (t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed") : reason === "time" ? "time limit reached, closed at the market price" : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
 }
 
-/** Walk the hourly bars since the last check and apply stop / targets in a conservative order. */
+/** Walk the 15-minute bars since the last check and apply stop / targets in a conservative order. */
 async function manage(db: DB, open: any[]) {
   const bySym = new Map<string, Candle[]>();
   for (const t of open) {
     try {
-      if (!bySym.has(t.symbol)) bySym.set(t.symbol, await candles(t.symbol, "1h"));
-      const bars = bySym.get(t.symbol)!.filter((k) => k.t + 3600 > t.last_checked && k.t >= Math.floor(new Date(t.opened_at).getTime() / 1000 / 3600) * 3600 + 3600);
+      // 15-minute candles, from the first one that starts after the trade opened (the paper tick runs every 15 minutes).
+      if (!bySym.has(t.symbol)) bySym.set(t.symbol, await candles(t.symbol, "15m"));
+      const BAR = 900, openedSec = Math.floor(new Date(t.opened_at).getTime() / 1000);
+      const bars = bySym.get(t.symbol)!.filter((k) => k.t + BAR > t.last_checked && k.t >= Math.ceil(openedSec / BAR) * BAR && k.t + BAR <= Math.floor(Date.now() / 1000) + 60);
       const long = t.dir === "long";
       for (const k of bars) {
         if (t.status !== "open") break;
@@ -130,7 +132,7 @@ async function manage(db: DB, open: any[]) {
           await db.from("viko_paper_trades").update({ t1_hit: true, stop: t.stop }).eq("id", t.id);
         }
         if (t.t1_hit && t.status === "open" && (long ? k.h >= t.target2 : k.l <= t.target2)) { await closePart(db, t, t.target2, t.qty_open, "target2"); break; }
-        // Trail the stop with this hour's best price, exactly like the real-money managers.
+        // Trail the stop with this candle's best price, exactly like the real-money managers.
         t.peak = nextPeak(t.dir, t.peak ?? t.entry, long ? k.h : k.l);
         const tr = trailStop({ dir: t.dir, entry: t.entry, initialStop: t.initial_stop ?? t.stop, stop: t.stop, target1: t.target1, target2: t.target2, peak: t.peak, price: k.c, t1Hit: !!t.t1_hit });
         if (tr) { t.stop = tr.stop; await log(db, t.id, "trail", `${t.label}: stop-loss moved to ${fmt(tr.stop)}: ${tr.why}.`); }

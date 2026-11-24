@@ -119,7 +119,7 @@ export function Rulebook() {
         <li>Targets follow the Rule of Equality and Neely's Fibonacci notes (p. 5-8, 5-11, 5-12) and the Stage 2 retracement requirements (p. 6-2).</li>
       </ul>
       <h3>How a running trade is managed</h3>
-      <p>Every 5 minutes for real-money and demo trades (every hour's candle for paper trades), on every broker, Viko records the best price the trade has reached and moves the stop-loss only in the trade's favour:</p>
+      <p>Every 5 minutes for real-money and demo trades (every 15-minute candle for paper trades), on every broker, Viko records the best price the trade has reached and moves the stop-loss only in the trade's favour:</p>
       <ul>
         <li>Halfway to target 1: the stop moves halfway between the original stop and the entry, so the risk is cut in half.</li>
         <li>80% of the way to target 1: the stop moves to the entry price, so the trade can no longer lose.</li>

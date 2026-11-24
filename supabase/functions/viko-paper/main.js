@@ -261,8 +261,9 @@ async function manage(db, open) {
   const bySym = /* @__PURE__ */ new Map();
   for (const t of open) {
     try {
-      if (!bySym.has(t.symbol)) bySym.set(t.symbol, await candles(t.symbol, "1h"));
-      const bars = bySym.get(t.symbol).filter((k) => k.t + 3600 > t.last_checked && k.t >= Math.floor(new Date(t.opened_at).getTime() / 1e3 / 3600) * 3600 + 3600);
+      if (!bySym.has(t.symbol)) bySym.set(t.symbol, await candles(t.symbol, "15m"));
+      const BAR = 900, openedSec = Math.floor(new Date(t.opened_at).getTime() / 1e3);
+      const bars = bySym.get(t.symbol).filter((k) => k.t + BAR > t.last_checked && k.t >= Math.ceil(openedSec / BAR) * BAR && k.t + BAR <= Math.floor(Date.now() / 1e3) + 60);
       const long = t.dir === "long";
       for (const k of bars) {
         if (t.status !== "open") break;

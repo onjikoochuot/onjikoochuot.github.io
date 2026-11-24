@@ -188,9 +188,10 @@ Deno.test("Deriv: stop amount tightens, break-even, then Viko closes when price 
 });
 
 // ---------------------------------------------------------------- Paper (hourly candles)
-Deno.test("Paper: stop trails on hourly candles, half closes at target 1, the rest at the trailing stop", async () => {
-  const open = Math.floor(Date.now() / 3600e3) * 3600 - 10 * 3600;
-  const bars = [[105, 101, 104.5], [108, 103, 107.5], [111, 106, 110.5], [116, 110.5, 115.5], [114, 109, 109.5]].map(([h, l, c], i) => [(open + (i + 1) * 3600) * 1000, l, h, l, c, 1000].map(String));
+Deno.test("Paper: stop trails on 15-minute candles, half closes at target 1, the rest at the trailing stop", async () => {
+  const open = Math.floor(Date.now() / 900e3) * 900 - 10 * 900 - 37; // opened mid-candle
+  const first = Math.ceil(open / 900) * 900;
+  const bars = [[99, 98, 99], [105, 101, 104.5], [108, 103, 107.5], [111, 106, 110.5], [116, 110.5, 115.5], [114, 109, 109.5]].map(([h, l, c], i) => [(first - 900 + i * 900) * 1000, l, h, l, c, 1000].map(String)); // the first candle started before the trade opened and must be skipped
   globalThis.fetch = (async (url: string) => (String(url).includes("/klines") ? J(bars) : J({}))) as typeof fetch;
   const db = fakeDb({ viko_paper_account: { id: "main", balance: 10000 } });
   const t: any = { id: "t1", symbol: "crypto:TESTUSDT", label: "TEST", tf: "15m", dir: "long", entry: 100, stop: 95, initial_stop: 95, target1: 110, target2: 120, qty: 5, qty_open: 5, t1_hit: false, realized: 0, status: "open", opened_at: new Date(open * 1000).toISOString(), last_checked: open, peak: 100 };

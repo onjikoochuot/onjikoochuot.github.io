@@ -67,7 +67,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
   return (
     <section className="view paper">
       <header className="view-head">
-        <div><h2>Paper trading</h2><p>Pretend money, real live prices. The stop-loss trails each hour's best price exactly like real trades (risk halved, then break-even, then profit locked), and half of each trade closes at target 1.</p></div>
+        <div><h2>Paper trading</h2><p>Pretend money, real live prices. The stop-loss trails each 15-minute candle's best price exactly like real trades (risk halved, then break-even, then profit locked), and half of each trade closes at target 1.</p></div>
       </header>
       {err && <p className="err">{err}</p>}
 
