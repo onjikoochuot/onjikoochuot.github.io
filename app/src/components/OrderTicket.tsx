@@ -3,7 +3,7 @@ import type { Setup } from "../engine/types";
 import { fmt } from "../engine/analyze";
 import { save, store } from "../lib/api";
 
-type Props = { side: "long" | "short"; label: string; price: number; atr: number; setup: Setup | null; account: number; riskPct: number; busy: boolean; onClose: () => void; onPlace: (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean; amount: number }) => void };
+type Props = { side: "long" | "short"; label: string; price: number; atr: number; setup: Setup | null; account: number; riskPct: number; busy: boolean; onClose: () => void; onPlace: (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean; amount: number; level?: number; hours?: number }) => void };
 
 const round = (x: number) => Number(x.toPrecision(6));
 
@@ -15,17 +15,22 @@ export default function OrderTicket({ side: initial, label, price, atr, setup, b
     const sgn = side === "long" ? 1 : -1;
     return { stop: round(price - sgn * 1.5 * atr), t1: round(price + sgn * 3 * atr) };
   }, [side, price, atr, useSetup, setup]);
+  const [when, setWhen] = useState<"now" | "price">("now");
+  const [lvl, setLvl] = useState<string>("");
+  const [hours, setHours] = useState(72);
+  const level = when === "price" && Number(lvl) > 0 ? Number(lvl) : null;
+  const entry = level ?? price; // figures are worked out from the price the trade will open at
   const [stop, setStop] = useState<string>("");
   const [t1, setT1] = useState<string>("");
   const st = stop === "" ? defaults.stop : Number(stop);
   const tg = t1 === "" ? defaults.t1 : Number(t1);
   const long = side === "long";
-  const valid = long ? st < price && tg > price : st > price && tg < price;
-  const risk = Math.abs(price - st), reward = Math.abs(tg - price);
+  const valid = (long ? st < entry && tg > entry : st > entry && tg < entry) && (when === "now" || level !== null);
+  const risk = Math.abs(entry - st), reward = Math.abs(tg - entry);
   const rr = risk ? reward / risk : 0;
-  const t2 = price + (tg - price) * 1.618;
+  const t2 = entry + (tg - entry) * 1.618;
   const [amount, setAmount] = useState<number>(() => store("paperAmount", 100));
-  const pct = (to: number) => Math.abs(to - price) / price;
+  const pct = (to: number) => Math.abs(to - entry) / entry;
   const profit1 = (amount / 2) * pct(tg), profit2 = profit1 + (amount / 2) * pct(t2), loss = amount * pct(st);
   const usd = (x: number) => `${x < 0 ? "−" : "+"}$${Math.abs(x).toFixed(2)}`;
 
@@ -37,7 +42,17 @@ export default function OrderTicket({ side: initial, label, price, atr, setup, b
           <button role="radio" aria-checked={long} className={long ? "on buy" : ""} onClick={() => { setSide("long"); setStop(""); setT1(""); }}>Buy</button>
           <button role="radio" aria-checked={!long} className={!long ? "on sell" : ""} onClick={() => { setSide("short"); setStop(""); setT1(""); }}>Sell</button>
         </div>
-        <p className="ot-price">Fills at the live market price, now <b className="mono">{fmt(price)}</b>.</p>
+        <div className="seg" role="radiogroup" aria-label="When to open">
+          <button role="radio" aria-checked={when === "now"} className={when === "now" ? "on" : ""} onClick={() => setWhen("now")}>Open now</button>
+          <button role="radio" aria-checked={when === "price"} className={when === "price" ? "on" : ""} onClick={() => { setWhen("price"); if (!lvl) setLvl(String(round(long ? price - atr * 0.5 : price + atr * 0.5))); }}>Wait for my price</button>
+        </div>
+        {when === "now" ? <p className="ot-price">Fills at the live market price, now <b className="mono">{fmt(price)}</b>.</p> : (
+          <>
+            <label>Open when the price reaches<input type="number" inputMode="decimal" step="any" value={lvl} onChange={(e) => setLvl(e.target.value)} /></label>
+            <p className="ot-price">Now <b className="mono">{fmt(price)}</b>. {level ? `Viko opens it when the price ${level > price ? "rises" : "dips"} to ${fmt(level)}, checking every 5 minutes.` : ""}</p>
+            <div className="seg" role="radiogroup" aria-label="Give up after">{([[24, "Wait 1 day"], [72, "3 days"], [168, "1 week"]] as [number, string][]).map(([h, l]) => <button key={h} role="radio" aria-checked={hours === h} className={hours === h ? "on" : ""} onClick={() => setHours(h)}>{l}</button>)}</div>
+          </>
+        )}
         <label>Paper money to put in ($)<input type="number" min={1} step="any" inputMode="decimal" value={amount || ""} onChange={(e) => { const v = Math.max(0, Number(e.target.value)); setAmount(v); save("paperAmount", v); }} /></label>
         <label>Stop-loss<input type="number" inputMode="decimal" step="any" value={stop === "" ? defaults.stop : stop} onChange={(e) => setStop(e.target.value)} /></label>
         <label>Take-profit (target 1)<input type="number" inputMode="decimal" step="any" value={t1 === "" ? defaults.t1 : t1} onChange={(e) => setT1(e.target.value)} /></label>
@@ -49,11 +64,11 @@ export default function OrderTicket({ side: initial, label, price, atr, setup, b
           <div><dt>If it runs to target 2</dt><dd className="mono bull">{valid ? usd(profit2) : "–"}</dd></div>
           <div><dt>If the stop is hit</dt><dd className="mono bear">{valid ? usd(-loss) : "–"}</dd></div>
         </dl>
-        {!valid && <p className="err">{long ? "For a buy, the stop must be below the price and the target above it." : "For a sell, the stop must be above the price and the target below it."}</p>}
+        {!valid && <p className="err">{when === "price" && level === null ? "Enter the price to wait for." : long ? `For a buy, the stop must be below the ${when === "price" ? "entry" : ""} price and the target above it.` : `For a sell, the stop must be above the ${when === "price" ? "entry" : ""} price and the target below it.`}</p>}
         {valid && rr < 1.5 && <p className="ctx-note warn">The reward is small for the risk. Viko only approves trades at 2 or better.</p>}
         <div className="row">
           <button className="link" onClick={onClose}>Cancel</button>
-          <button className={`btn primary ${long ? "" : "sell-btn"}`} disabled={!valid || busy || !(amount > 0)} onClick={() => onPlace({ dir: side, stop: st, target1: tg, target2: t2, fromSetup: useSetup, amount })}>{busy ? "Placing…" : `OK, ${long ? "buy" : "sell"} $${amount.toFixed(2)} of ${label} on paper`}</button>
+          <button className={`btn primary ${long ? "" : "sell-btn"}`} disabled={!valid || busy || !(amount > 0)} onClick={() => onPlace({ dir: side, stop: st, target1: tg, target2: t2, fromSetup: useSetup, amount, ...(level ? { level, hours } : {}) })}>{busy ? "Placing…" : level ? `OK, ${long ? "buy" : "sell"} $${amount.toFixed(2)} at ${fmt(level)} on paper` : `OK, ${long ? "buy" : "sell"} $${amount.toFixed(2)} of ${label} on paper`}</button>
         </div>
       </div>
     </div>

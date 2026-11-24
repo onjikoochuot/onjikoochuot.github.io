@@ -28,7 +28,7 @@ export function isFresh(r: PickRow, now: number) {
 
 export const ideaOf = (r: PickRow, price?: number): BnTradeIdea => ({ symbol: r.symbol, label: r.label, dir: r.setup!.dir, entry: price ?? r.setup!.entry, stop: r.setup!.stop, target1: r.setup!.target1, target2: r.setup!.target2, setup: `${r.setup!.name} (${r.setup!.degree}), ${r.tf}`, score: r.setup!.score });
 
-export const pickOf = (r: PickRow): AutoPick => { const s = r.setup!; return { symbol: r.symbol, label: r.label, market: r.market, tf: r.tf, dir: s.dir, score: s.score, name: `${s.name} (${s.degree})`, stop: s.stop, target1: s.target1, target2: s.target2, expectBars: s.expectBars ?? 3 }; };
+export const pickOf = (r: PickRow): AutoPick => { const s = r.setup!; return { symbol: r.symbol, label: r.label, market: r.market, tf: r.tf, dir: s.dir, score: s.score, name: `${s.name} (${s.degree})`, stop: s.stop, target1: s.target1, target2: s.target2, expectBars: s.expectBars ?? 3, price: r.price, entryLevel: s.entry, triggered: s.triggered }; };
 type Sel = { has: (r: PickRow) => boolean; toggle: (r: PickRow) => void };
 
 export default function Picks({ account, riskPct, onOpen, onReal, onPaper }: { appKey: string; onNeedKey: () => void; account: number; riskPct: number; onOpen: (id: string, tf: Tf) => void; onBinance?: (i: BnTradeIdea) => void; onReal: (p: AutoPick[]) => void; onPaper: (p: PaperPick[]) => void }) {

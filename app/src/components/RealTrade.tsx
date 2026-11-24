@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { fmt } from "../engine/analyze";
 import { BrokerSelect, brokerLabel, curFor } from "../lib/brokers";
-import { auto, save, store, type AutoCfg, type AutoPick, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
+import { auto, paper, save, store, type AutoCfg, type AutoPick, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
+import WhenToOpen, { defaultWait, levelProblem, waitSentence, type Wait } from "./WhenToOpen";
 
 const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "10%"], ["balanced", "Balanced", "20%"], ["bold", "Bold", "35%"], ["max", "Max profit", "50%"]];
 const SPLITS: [AutoCfg["alloc"], string, string][] = [
@@ -31,6 +32,9 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
   const [done, setDone] = useState("");
   const many = picks.length > 1;
   const live = s.mode === "live";
+  const [wait, setWait] = useState<Wait>(() => defaultWait(picks));
+  const waiting = wait.mode !== "now";
+  const waitBad = !many && wait.mode === "price" ? levelProblem(picks[0]!, wait.level) : "";
   const cfg: AutoCfg = { broker: s.broker, mode: s.mode, amount: s.amount, count: picks.length, horizon: "48h", strict: 65, risk: s.risk, alloc: many ? s.alloc : "equal", custom: null, fallback: false, picks };
   const key = JSON.stringify(cfg);
 
@@ -50,6 +54,19 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
 
   const go = async () => {
     setBusy(true); setErr("");
+    if (waiting) {
+      // Each setup becomes a waiting order; Viko places it through the same path as "Trade" when its entry comes.
+      const per = many && s.alloc !== "each" ? s.amount / picks.length : s.amount;
+      const saved: string[] = [], bad: string[] = [];
+      for (const p of picks) {
+        try { await paper.pendingAdd(appKey, { kind: "real", pick: p, waitFor: wait.mode, level: wait.level, hours: wait.hours, minScore: wait.minScore, cfg: { broker: s.broker, mode: s.mode, amount: Math.round(per * 100) / 100, risk: s.risk, alloc: "equal", horizon: "48h", strict: 65, custom: null, fallback: false } }); saved.push(p.label); }
+        catch (e) { bad.push(`${p.label}: ${(e as Error).message}`); }
+      }
+      if (saved.length) setDone(`Waiting order${saved.length > 1 ? "s" : ""} saved for ${saved.join(", ")}${live ? " (real money)" : " (demo)"}. ${!many ? waitSentence(picks[0]!, wait) + " " : ""}When the entry comes, Viko places the trade on your broker and manages it like any other: trailing stop-loss, take-profit and alerts. If the stop-loss level is hit first or time runs out, it's cancelled at no cost.`);
+      if (bad.length) setErr(bad.join(" "));
+      setBusy(false);
+      return;
+    }
     try {
       const r = await auto.start(appKey, cfg);
       setDone(`${r.placed} trade${r.placed === 1 ? "" : "s"} placed${live ? " with real money" : " on demo"}. Viko now trails the stop-loss to protect and lock in profit, and takes profit for you.`);
@@ -67,7 +84,7 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
         {!appKey ? <p className="err">Add your app key in Settings first. <button className="link" onClick={onNeedKey}>Open Settings</button></p> : done ? (
           <>
             <p className="ok-msg">{done}</p>
-            <p>Come back around <b>{when(now + tot.h0 * 3600000)}</b>. You can check progress or collect early any time under Auto-trade → Running.</p>
+            {waiting ? <p>See or cancel it under My trades → Waiting for entry.</p> : <p>Come back around <b>{when(now + tot.h0 * 3600000)}</b>. You can check progress or collect early any time under Auto-trade → Running.</p>}
             <div className="rt-actions"><button className="btn" onClick={onClose}>Close</button><button className="btn primary" onClick={onWatch}>Watch it now</button></div>
           </>
         ) : (
@@ -77,6 +94,7 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
                 <span className="auto-label">{many && s.alloc === "each" ? "Money per trade" : "How much to trade"}</span>
                 <span className="money-in"><input className="cur" value={c} readOnly aria-label="Currency" /><input type="number" min={1} step="any" inputMode="decimal" autoFocus value={s.amount || ""} onChange={(e) => set({ amount: Math.max(0, Number(e.target.value)) })} aria-label="Amount" /></span>
               </label>
+              <WhenToOpen picks={picks} value={wait} onChange={setWait} />
               <Seg label="Account" value={s.mode} options={[["live", "Real money"], ["demo", "Demo"]]} onChange={(mode) => { set({ mode }); setAgree(false); }} />
               <BrokerSelect value={s.broker} onChange={(broker) => set({ broker })} />
               {many && <Seg label="Share the money" value={s.alloc} options={SPLITS.map(([v, l]) => [v, l] as [AutoCfg["alloc"], string])} onChange={(alloc) => set({ alloc })} />}
@@ -87,7 +105,8 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
             {loading && <p className="muted">Getting live broker prices…</p>}
             {err && <p className="err">{err}</p>}
             {pv?.limits && !loading && <p className={`sub ${pv.limits.lossHit ? "neg" : ""}`}>Daily limits today: {pv.limits.used.toFixed(2)}{pv.limits.money != null ? ` of ${pv.limits.money}` : ""} used in {pv.limits.count} trade{pv.limits.count === 1 ? "" : "s"}{pv.limits.trades != null ? ` (most ${pv.limits.trades})` : ""}, result {pv.limits.pnl >= 0 ? "+" : "−"}{Math.abs(pv.limits.pnl).toFixed(2)}{pv.limits.loss != null ? ` (stop at −${pv.limits.loss})` : ""}. Change them under Auto-trade.</p>}
-            {pv && !loading && trades.length === 0 && <p className="err">{pv.skipped.join(" ") || "This can't be placed right now."}</p>}
+            {waiting && <p className="ctx-note">The figures below use today's price. The real order is sized and placed when the entry comes, and only if your daily limits and balance allow it then.</p>}
+            {pv && !loading && trades.length === 0 && !waiting && <p className="err">{pv.skipped.join(" ") || "This can't be placed right now."}</p>}
             {pv && !loading && trades.length > 0 && (
               <>
                 <ul className="rt-list">{trades.map((t) => <Row key={t.symbol} t={t} now={now} />)}</ul>
@@ -106,8 +125,8 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
             {live && <label className="check bn-agree"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I understand this trades my real money and that I can lose it.</label>}
             <div className="rt-actions">
               <button className="btn" onClick={onClose}>Cancel</button>
-              <button className={`btn primary ${live ? "sell-btn" : ""}`} disabled={busy || loading || !trades.length || (live && !agree)} onClick={go}>
-                {busy ? "Placing…" : `${live ? "Trade" : "Place on demo"} ${tot.money ? tot.money.toFixed(2) : ""} ${c}`}
+              <button className={`btn primary ${live ? "sell-btn" : ""}`} disabled={busy || (waiting ? !(s.amount > 0) || !!waitBad || !!notConnected : loading || !trades.length) || (live && !agree)} onClick={go}>
+                {busy ? (waiting ? "Saving…" : "Placing…") : waiting ? `Wait for the entry, then ${live ? "trade" : "place on demo"}` : `${live ? "Trade" : "Place on demo"} ${tot.money ? tot.money.toFixed(2) : ""} ${c}`}
               </button>
             </div>
           </>

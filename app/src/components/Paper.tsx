@@ -1,4 +1,5 @@
 import { HistoryBar, useSelection } from "./HistoryTools";
+import { WaitingOrders } from "./WhenToOpen";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmt } from "../engine/analyze";
 import { paper, type PaperState, type PaperTrade } from "../lib/api";
@@ -70,6 +71,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
         <div><h2>Paper trading</h2><p>Pretend money, real live prices. The stop-loss trails each 15-minute candle's best price exactly like real trades (risk halved, then break-even, then profit locked), and half of each trade closes at target 1.</p></div>
       </header>
       {err && <p className="err">{err}</p>}
+      <WaitingOrders appKey={appKey} kind="paper" />
 
       <div className="stats">
         <div><span className="mono big">{money(equity)}</span><span>account value</span></div>

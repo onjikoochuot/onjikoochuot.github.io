@@ -4,6 +4,7 @@ import { fmt } from "../engine/analyze";
 import { TF_HOURS } from "../engine/layman";
 import type { Tf } from "../engine/types";
 import { paper, save, store, type AutoPick } from "../lib/api";
+import WhenToOpen, { defaultWait, levelProblem, waitSentence, type Wait } from "./WhenToOpen";
 
 /** A setup to paper trade, with Viko's latest price for it (the trade itself opens at the live price). */
 export type PaperPick = AutoPick & { entry: number; tip?: string };
@@ -26,12 +27,17 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<string[] | null>(null);
+  const [wait, setWait] = useState<Wait>(() => defaultWait(picks));
+  const waiting = wait.mode !== "now";
+  const waitBad = !many && wait.mode === "price" ? levelProblem(picks[0]!, wait.level) : "";
   useEffect(() => { save("paperAmount", amount); save("paperSplit", split); save("paperCloseAfter", closeAfter); }, [amount, split, closeAfter]);
   useEffect(() => { if (appKey) paper.state(appKey).then((s) => setBalance(Number(s.account?.balance ?? NaN))).catch(() => {}); }, [appKey]);
 
   const per = many && split === "equal" ? amount / picks.length : amount;
   const rows = picks.map((p) => {
-    const move = (to: number) => Math.abs(to - p.entry) / p.entry;
+    // With "at my price", the figures are worked out from that entry price.
+    const from = !many && wait.mode === "price" && wait.level ? wait.level : p.entry;
+    const move = (to: number) => Math.abs(to - from) / from;
     const h = (p.expectBars ?? 3) * (TF_HOURS[p.tf as Tf] ?? 1);
     // Estimated fees and slippage (see Track record): a target exit is a limit order, a stop-loss exit is a market order.
     const c = costsFor(p.symbol), costWin = per * roundTripPct(c, false), costLoss = per * roundTripPct(c, true);
@@ -45,7 +51,9 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
     setBusy(true); setErr("");
     const ok: string[] = [], bad: string[] = [];
     for (const p of picks) {
-      try { await paper.open(appKey, { symbol: p.symbol, label: p.label, tf: p.tf, dir: p.dir, stop: p.stop, target1: p.target1, target2: p.target2, setup: `${p.name}, ${p.tf}`, score: p.score, tip: p.tip ?? "", source: "manual", amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); }
+      try {
+        if (waiting) { await paper.pendingAdd(appKey, { kind: "paper", pick: { ...p, tip: p.tip ?? "" }, waitFor: wait.mode, level: wait.level, hours: wait.hours, minScore: wait.minScore, amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); continue; }
+        await paper.open(appKey, { symbol: p.symbol, label: p.label, tf: p.tf, dir: p.dir, stop: p.stop, target1: p.target1, target2: p.target2, setup: `${p.name}, ${p.tf}`, score: p.score, tip: p.tip ?? "", source: "manual", amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); }
       catch (e) { bad.push(`${p.label}: ${(e as Error).message}`); }
     }
     setBusy(false);
@@ -62,14 +70,15 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
 
         {done ? (
           <>
-            <p className="ok-msg">{done.length} paper trade{done.length > 1 ? "s" : ""} opened: {done.join(", ")}.</p>
-            {err && <p className="err">Not opened: {err}</p>}
-            <p>Come back around <b>{when(tot.h0)}</b>.</p>
+            <p className="ok-msg">{waiting ? `Waiting order${done.length > 1 ? "s" : ""} saved: ${done.join(", ")}. ${many ? "Each opens" : "It opens"} only when the entry comes; you'll get an alert when it does.` : `${done.length} paper trade${done.length > 1 ? "s" : ""} opened: ${done.join(", ")}.`}</p>
+            {err && <p className="err">Not {waiting ? "saved" : "opened"}: {err}</p>}
+            {waiting ? <p>{!many && waitSentence(picks[0]!, wait)} You can see or cancel {many ? "them" : "it"} on the Paper page, under "Waiting for entry".</p> : <p>Come back around <b>{when(tot.h0)}</b>.</p>}
             <div className="rt-actions"><button className="btn" onClick={onClose}>Close</button><button className="btn primary" onClick={onDone}>See them in Paper trading</button></div>
           </>
         ) : (
           <>
             <div className="rt-form">
+              <WhenToOpen picks={picks} value={wait} onChange={setWait} />
               <label className="auto-field">
                 <span className="auto-label">{many && split === "each" ? "Paper money per trade" : "Paper money to put in"}</span>
                 <span className="money-in"><input className="cur" value="$" readOnly aria-label="Currency" /><input type="number" min={1} step="any" inputMode="decimal" autoFocus value={amount || ""} onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))} aria-label="Amount" /></span>
@@ -92,7 +101,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
                     <div className="rt-top"><b>{p.label}</b><span className={`tag ${p.dir === "long" ? "ok" : "sell"}`}>{p.dir === "long" ? "Buy" : "Sell"}</span><span className="tag no">{p.tf} · {p.score}%</span></div>
                     <dl className="pick-levels mono">
                       <div><dt>Money</dt><dd>${per.toFixed(2)}</dd></div>
-                      <div><dt>Price now</dt><dd>{fmt(p.entry)}</dd></div>
+                      <div><dt>{!many && wait.mode === "price" && wait.level ? "Opens at" : "Price now"}</dt><dd>{fmt(!many && wait.mode === "price" && wait.level ? wait.level : p.entry)}</dd></div>
                       <div><dt>Stop-loss</dt><dd className="neg">{fmt(p.stop)} ({pc(Math.abs(p.stop - p.entry) / p.entry)})</dd></div>
                       <div><dt>Target 1 / 2</dt><dd className="pos-c">{fmt(p.target1)} / {fmt(p.target2)}</dd></div>
                       <div><dt>Profit</dt><dd className="pos-c">{usd(p1)} to {usd(p2)}</dd></div>
@@ -115,7 +124,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
             {err && <p className="err">{err}</p>}
             <div className="rt-actions">
               <button className="btn" onClick={onClose}>Cancel</button>
-              <button className="btn primary" disabled={busy || !(amount > 0) || tooMuch} onClick={go}>{busy ? "Opening…" : `OK, open ${many ? `${picks.length} paper trades` : "paper trade"} ($${tot.money.toFixed(2)})`}</button>
+              <button className="btn primary" disabled={busy || !(amount > 0) || tooMuch || !!waitBad} onClick={go}>{busy ? "Saving…" : waiting ? `OK, wait for the entry ($${tot.money.toFixed(2)})` : `OK, open ${many ? `${picks.length} paper trades` : "paper trade"} ($${tot.money.toFixed(2)})`}</button>
             </div>
           </>
         )}

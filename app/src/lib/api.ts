@@ -161,7 +161,12 @@ export const paper = {
   tick: (key: string, force = false) => pfetch(key, "tick", { force }),
   /** Delete finished paper trades: some by id, or all of them. Open trades and the balance are untouched. */
   deleteHistory: (key: string, b: { ids?: string[]; all?: boolean }): Promise<{ deleted: number }> => pfetch(key, "history-delete", b),
+  /** Waiting orders (paper and real money) that open when their entry condition is met. */
+  pendingAdd: (key: string, b: Record<string, unknown>): Promise<{ pending: PendingOrder }> => pfetch(key, "pending-add", b),
+  pendingList: (key: string): Promise<{ waiting: PendingOrder[]; recent: PendingOrder[] }> => pfetch(key, "pending-list"),
+  pendingCancel: (key: string, id: string) => pfetch(key, "pending-cancel", { id }),
 };
+export type PendingOrder = { id: string; kind: "paper" | "real"; symbol: string; label: string; tf: string; dir: "long" | "short"; score: number; name: string; stop: number; target1: number; target2: number; wait_for: "price" | "confirm"; level: number | null; start_price: number | null; min_score: number; amount: number | null; close_after_hours: number | null; cfg: { broker?: string; mode?: string; amount?: number } | null; status: "waiting" | "opened" | "cancelled" | "expired" | "failed"; note: string | null; created_at: string; expires_at: string; done_at: string | null; last_price: number | null };
 
 // ---------- News, events and opinion ----------
 export const NEWS = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-news";
@@ -215,7 +220,9 @@ export const binance = {
 export const AUTO = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-auto";
 export type AutoAlloc = "each" | "equal" | "score" | "custom";
 /** A setup the user chose to trade as it stands (from a chart tip or Today's picks). */
-export type AutoPick = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; name: string; stop: number; target1: number; target2: number; expectBars: number };
+export type AutoPick = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; name: string; stop: number; target1: number; target2: number; expectBars: number;
+  /** Optional, for "When to open": the live price, Viko's entry trigger level and whether it has fired. */
+  price?: number; entryLevel?: number; triggered?: boolean };
 export type AutoCfg = { broker: "binance" | "deriv" | "bybit" | "mt5" | "both"; mode: "demo" | "live"; amount: number; count: number; horizon: "24h" | "48h" | "72h" | "1w" | "1m"; strict: number; risk: "careful" | "balanced" | "bold" | "max"; alloc: AutoAlloc; custom?: Record<string, number> | null; fallback: boolean; picks?: AutoPick[] };
 export type AutoPreviewTrade = { symbol: string; label: string; market: string; tf: string; dir: "long" | "short"; score: number; agree: number; against: number; opinion: string; stance: string; setup: string; broker: "binance" | "deriv"; brokerSymbol: string; below: boolean; entry: number; stop: number; target1: number; target2: number; money: number; leverage: number; loss: number; profit1: number; profit2: number; hours: [number, number]; newsAgainst?: boolean };
 export type Limits = { on: boolean; money: number | null; trades: number | null; loss: number | null; closeOnLoss: boolean; applies: "live" | "all"; tz: string };

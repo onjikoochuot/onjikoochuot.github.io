@@ -1042,7 +1042,9 @@ Deno.serve(async (req) => {
       if (!(await keyOk(req, db, "cron_key"))) return json({ error: "unauthorised" }, 401);
       return json({ ok: true, errors: await manageAll(db, { fillPlans: true }) });
     }
-    if (!(await keyOk(req, db, "journal_key"))) return json({ error: "Your app key is missing or wrong. Add it in Settings." }, 401);
+    // A waiting order whose entry has come (sent by viko-paper with the cron key): same path as "start".
+    const fromWaiting = rt === "start-pending" && (await keyOk(req, db, "cron_key") || await keyOk(req, db, "journal_key"));
+    if (!fromWaiting && !(await keyOk(req, db, "journal_key"))) return json({ error: "Your app key is missing or wrong. Add it in Settings." }, 401);
 
     if (rt === "state") {
       if (url.searchParams.get("refresh")) await manageAll(db, { fillPlans: false }).catch(() => []);
@@ -1119,11 +1121,11 @@ Deno.serve(async (req) => {
       const d = await Deriv.open(b.mode === "live" ? "live" : "demo");
       try { const m = await d.send({ sell: Number(b.contract_id), price: 0 }); return json({ ok: true, sold_for: m.sell?.sold_for }); } finally { d.close(); }
     }
-    if (rt === "preview" || rt === "start") {
+    if (rt === "preview" || rt === "start" || rt === "start-pending") {
       const cfg = readCfg(b);
       const needDeriv = allow(cfg, "deriv");
       let d: Deriv | null = null;
-      if (needDeriv) d = Deriv.connected() ? await Deriv.open(cfg.mode).catch(async (e) => { if (rt === "start") throw e; return await Deriv.publicSession().catch(() => null); }) : rt === "preview" ? await Deriv.publicSession().catch(() => null) : null;
+      if (needDeriv) d = Deriv.connected() ? await Deriv.open(cfg.mode).catch(async (e) => { if (rt !== "preview") throw e; return await Deriv.publicSession().catch(() => null); }) : rt === "preview" ? await Deriv.publicSession().catch(() => null) : null;
       try {
         const { data: openAll } = await db.from("viko_auto_positions").select("symbol").eq("status", "open").eq("mode", cfg.mode);
         const exclude = new Set<string>((openAll ?? []).map((x: any) => String(x.symbol)));

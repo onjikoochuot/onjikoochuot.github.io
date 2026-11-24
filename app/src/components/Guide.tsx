@@ -25,7 +25,8 @@ const SECTIONS: { id: string; title: string; open?: string; steps: string[] }[] 
   ] },
   { id: "paper", title: "5. Practise with paper money", open: "paper", steps: [
     "Paper trading starts with 10,000 practice dollars. Place trades from any chart, pick or High performers row, or switch on the autopilot.",
-    "Judge the method on 30 or more trades before trusting it with real money.",
+    "Judge the method on 30 or more trades before trusting it with real money. More → Track record shows how each score band has really done, after fees and slippage.",
+    "Waiting orders: on any paper or real-money ticket, choose When to open → At my price (opens when the price reaches your entry) or When Viko confirms (opens only once Viko re-reads the chart and approves the setup). Viko checks every 5 minutes, cancels at no cost if the stop-loss level is hit first or time runs out, and then manages the trade like any other. Setups marked \"Waiting for entry\" get Paper (wait) and Real (wait) buttons.",
   ] },
   { id: "brokers", title: "6. Connect your brokers", open: "brokers", steps: [
     "Open Brokers. Each tab has the exact steps: Binance, Bybit, MT5 (Exness, HFM, FXPesa, XM, IC Markets, Pepperstone or any MetaTrader 5 broker, through MetaApi) and Deriv.",

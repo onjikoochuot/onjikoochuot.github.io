@@ -193,13 +193,18 @@ export default function App() {
   };
   const paperTrade = () => {
     if (!setup || !tip) return;
-    setPaperPicks([{ symbol: inst.id, label: inst.label, market: inst.market, tf, dir: setup.dir, score: setup.score, name: `${setup.name} (${setup.degree})${setup.verdict === "APPROVED" ? "" : `, practice at ${setup.score}%`}`, stop: setup.stop, target1: setup.target1, target2: setup.target2, expectBars: setup.expectBars ?? 3, entry: lastPrice ?? setup.entry, tip: [tip.headline, ...tip.steps].join("\n") }]);
+    setPaperPicks([{ symbol: inst.id, label: inst.label, market: inst.market, tf, dir: setup.dir, score: setup.score, name: `${setup.name} (${setup.degree})${setup.verdict === "APPROVED" ? "" : `, practice at ${setup.score}%`}`, stop: setup.stop, target1: setup.target1, target2: setup.target2, expectBars: setup.expectBars ?? 3, entry: lastPrice ?? setup.entry, price: lastPrice, entryLevel: setup.entry, triggered: setup.triggered, tip: [tip.headline, ...tip.steps].join("\n") }]);
   };
-  const canPaper = !!setup && !setup.hardFail && setup.triggered && setup.rr1 > 0;
-  const placeOrder = async (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean; amount: number }) => {
+  // A fired setup can be traded now; one still waiting for its trigger can be placed as a waiting order.
+  const canPaper = !!setup && !setup.hardFail && setup.verdict !== "NO TRADE" && (setup.triggered ? setup.rr1 > 0 : true);
+  const placeOrder = async (o: { dir: "long" | "short"; stop: number; target1: number; target2: number; fromSetup: boolean; amount: number; level?: number; hours?: number }) => {
     if (!jkey) { setTicket(null); setSettingsOpen(true); return; }
     setPlacing(true); setErr(""); setNote("");
     try {
+      if (o.level) {
+        await paper.pendingAdd(jkey, { kind: "paper", pick: { symbol: inst.id, label: inst.label, market: inst.market, tf, dir: o.dir, score: o.fromSetup && setup ? setup.score : 0, name: o.fromSetup && setup ? `Manual order on ${setup.name}` : "Manual order", stop: o.stop, target1: o.target1, target2: o.target2, expectBars: 3 }, waitFor: "price", level: o.level, hours: o.hours ?? 72, amount: o.amount });
+        setNote(`Waiting order saved: paper ${o.dir === "long" ? "buy" : "sell"} on ${inst.label} opens at ${fmt(o.level)}. See it on the Paper page.`); setTicket(null); setPlacing(false); return;
+      }
       await paper.open(jkey, { symbol: inst.id, label: inst.label, tf, dir: o.dir, stop: o.stop, target1: o.target1, target2: o.target2, setup: o.fromSetup && setup ? `Manual order on ${setup.name} (${setup.score}%)` : "Manual order", score: o.fromSetup && setup ? setup.score : 0, tip: "", source: "manual", amount: o.amount });
       setNote(`Paper ${o.dir === "long" ? "buy" : "sell"} placed on ${inst.label}.`); setTicket(null);
     } catch (e) { setErr((e as Error).message); setTicket(null); }
@@ -208,8 +213,8 @@ export default function App() {
 
   const liveText = status === "live" ? "Live" : status === "polling" ? "Live, every 30 s" : "Connecting";
   const lastPrice = candles.length ? candles[candles.length - 1].c : analysis?.last.c;
-  const realTrade = () => setup && setRealPicks([{ symbol: inst.id, label: inst.label, market: inst.market, tf, dir: setup.dir, score: setup.score, name: `${setup.name} (${setup.degree})`, stop: setup.stop, target1: setup.target1, target2: setup.target2, expectBars: setup.expectBars ?? 3 }]);
-  const tipEl = tip && <TipCard tip={tip} onPaper={canPaper ? paperTrade : undefined} onReal={canPaper ? realTrade : undefined} paperLabel={setup?.verdict === "APPROVED" ? "Paper trade this" : "Practise this on paper"} busy={placing} />;
+  const realTrade = () => setup && setRealPicks([{ symbol: inst.id, label: inst.label, market: inst.market, tf, dir: setup.dir, score: setup.score, name: `${setup.name} (${setup.degree})`, stop: setup.stop, target1: setup.target1, target2: setup.target2, expectBars: setup.expectBars ?? 3, price: lastPrice, entryLevel: setup.entry, triggered: setup.triggered }]);
+  const tipEl = tip && <TipCard tip={tip} onPaper={canPaper ? paperTrade : undefined} onReal={canPaper ? realTrade : undefined} paperLabel={setup && !setup.triggered ? "Paper: wait for the entry" : setup?.verdict === "APPROVED" ? "Paper trade this" : "Practise this on paper"} busy={placing} />;
 
   return (
     <div className="app">

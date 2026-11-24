@@ -24,7 +24,7 @@ function fakeDb(rows: Record<string, any> = {}) {
     for (const m of ["select", "eq", "in", "or", "gte", "lte", "neq", "order", "limit", "is"]) b[m] = () => b;
     b.maybeSingle = b.single = () => { q.single = true; return b; };
     for (const op of ["update", "insert", "upsert", "delete"]) b[op] = (v: any) => { q.op = op; q.value = v; writes.push(q); return b; };
-    b.then = (r: any, j: any) => Promise.resolve({ data: q.op === "select" ? (q.single ? rows[table] ?? null : rows[`${table}[]`] ?? []) : q.op === "insert" ? { id: "new" } : null, error: null, count: 0 }).then(r, j);
+    b.then = (r: any, j: any) => Promise.resolve({ data: q.op === "select" ? (q.single ? rows[table] ?? null : rows[`${table}[]`] ?? []) : q.op === "insert" ? { id: "new", ...(Array.isArray(q.value) ? {} : q.value) } : null, error: null, count: 0 }).then(r, j);
     return b;
   };
   return { from, writes, rpc: () => Promise.resolve({ data: [], error: null }) };
@@ -214,4 +214,77 @@ Deno.test("Shorts mirror exactly (Binance)", async () => {
   const db = fakeDb(), p: any = { ...base(), broker: "binance", broker_symbol: "TESTUSDT", refs: { scale: 1, tick: 0.01 }, dir: "short", stop: 105, initial_stop: 105, target1: 90, target2: 80 };
   w.amt = -10;
   for (const [mark, want] of [[95, 102.5], [92, 100]] as const) { w.mark = mark; await auto.manageBinance(db, p, false); apply(db, p); assertEquals(bnStop(w), want); }
+});
+
+// ---------------------------------------------------------------- Waiting orders ("open when…")
+function pendingWorld(price: number) {
+  const w: any = { price, autoCalls: [] as any[] };
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes("/ticker/24hr")) return J([{ symbol: "TESTUSDT", lastPrice: String(w.price), openPrice: "100" }]);
+    if (u.includes("/klines")) return J([]);
+    if (u.includes("viko-auto/start-pending")) { w.autoCalls.push({ key: (init?.headers as any)["x-viko-key"], body: JSON.parse(String(init?.body)) }); return J({ ok: true, placed: 1 }); }
+    return J({});
+  }) as typeof fetch;
+  return w;
+}
+const waitRow = (o: any = {}) => ({ id: "w1", kind: "paper", symbol: "crypto:TESTUSDT", label: "TEST", market: "Crypto", tf: "1h", dir: "long", score: 82, name: "Wave 3", stop: 95, target1: 110, target2: 120, expect_bars: 4, wait_for: "price", level: 98, start_price: 101, min_score: 80, amount: 500, close_after_hours: 72, cfg: null, tip: "", status: "waiting", expires_at: new Date(Date.now() + 3600e3).toISOString(), ...o });
+const pendingStatus = (db: any) => db.writes.filter((x: any) => x.table === "viko_pending" && x.value?.status).map((x: any) => x.value.status);
+
+Deno.test("Waiting order: keeps waiting until the price dips to the chosen entry, then opens a paper trade", async () => {
+  const w = pendingWorld(100);
+  let db = fakeDb({ "viko_pending[]": [waitRow()], viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), [], "still waiting at 100");
+  w.price = 97.9;
+  db = fakeDb({ "viko_pending[]": [waitRow()], viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  await paper.checkPending(db, "k");
+  const ins = db.writes.find((x: any) => x.table === "viko_paper_trades" && x.op === "insert");
+  assert(ins, "paper trade opened");
+  assertEquals([ins.value.stop, ins.value.target1, ins.value.close_by !== null], [95, 110, true]);
+  assertAlmostEquals(ins.value.qty * ins.value.entry, 500, 1e-6);
+  assertEquals(pendingStatus(db), ["opened"]);
+});
+
+Deno.test("Waiting order: breakout entry above the price opens when the price rises to it", async () => {
+  pendingWorld(102.5);
+  const db = fakeDb({ "viko_pending[]": [waitRow({ level: 102, start_price: 100 })], viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), ["opened"]);
+});
+
+Deno.test("Waiting order: cancelled if the stop-loss is hit first, expired when time runs out", async () => {
+  pendingWorld(94.9);
+  let db = fakeDb({ "viko_pending[]": [waitRow()] });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), ["cancelled"]);
+  assert(!db.writes.some((x: any) => x.table === "viko_paper_trades"), "no trade");
+  pendingWorld(100);
+  db = fakeDb({ "viko_pending[]": [waitRow({ expires_at: new Date(Date.now() - 1000).toISOString() })] });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), ["expired"]);
+});
+
+Deno.test("Waiting order: 'when Viko confirms' waits for an approved setup and uses its fresh stop and targets", async () => {
+  pendingWorld(100);
+  const row = waitRow({ wait_for: "confirm", level: null });
+  (globalThis as any).__analyze = () => ({ setups: [{ dir: "long", hardFail: false, triggered: false, rr1: 2.5, verdict: "WATCH", score: 84, stop: 96, target1: 112, target2: 125, name: "Wave 3", degree: "Minor" }] });
+  let db = fakeDb({ "viko_pending[]": [row], viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), [], "trigger not fired yet: keep waiting");
+  (globalThis as any).__analyze = () => ({ setups: [{ dir: "long", hardFail: false, triggered: true, rr1: 2.5, verdict: "APPROVED", score: 84, stop: 96, target1: 112, target2: 125, name: "Wave 3", degree: "Minor" }] });
+  db = fakeDb({ "viko_pending[]": [row], viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  await paper.checkPending(db, "k");
+  const ins = db.writes.find((x: any) => x.table === "viko_paper_trades" && x.op === "insert");
+  assertEquals([ins?.value.stop, ins?.value.target1, ins?.value.score], [96, 112, 84]);
+  (globalThis as any).__analyze = undefined;
+});
+
+Deno.test("Waiting order (real money): when the entry comes, the order goes to the broker through Auto-trade", async () => {
+  const w = pendingWorld(97.5);
+  const db = fakeDb({ "viko_pending[]": [waitRow({ kind: "real", amount: null, cfg: { broker: "binance", mode: "demo", amount: 50, risk: "balanced", alloc: "equal", horizon: "48h", strict: 65, custom: null, fallback: false } })] });
+  await paper.checkPending(db, "cron-key");
+  assertEquals(w.autoCalls.length, 1);
+  assertEquals([w.autoCalls[0].key, w.autoCalls[0].body.broker, w.autoCalls[0].body.picks[0].stop, w.autoCalls[0].body.count], ["cron-key", "binance", 95, 1]);
+  assertEquals(pendingStatus(db), ["opened"]);
 });

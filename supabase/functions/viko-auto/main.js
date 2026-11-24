@@ -1356,7 +1356,8 @@ Deno.serve(async (req) => {
       if (!await keyOk(req, db, "cron_key")) return json({ error: "unauthorised" }, 401);
       return json({ ok: true, errors: await manageAll(db, { fillPlans: true }) });
     }
-    if (!await keyOk(req, db, "journal_key")) return json({ error: "Your app key is missing or wrong. Add it in Settings." }, 401);
+    const fromWaiting = rt === "start-pending" && (await keyOk(req, db, "cron_key") || await keyOk(req, db, "journal_key"));
+    if (!fromWaiting && !await keyOk(req, db, "journal_key")) return json({ error: "Your app key is missing or wrong. Add it in Settings." }, 401);
     if (rt === "state") {
       if (url.searchParams.get("refresh")) await manageAll(db, { fillPlans: false }).catch(() => []);
       const { data: plans } = await db.from("viko_auto_plans").select("*").order("created_at", { ascending: false }).limit(20);
@@ -1442,12 +1443,12 @@ Deno.serve(async (req) => {
         d.close();
       }
     }
-    if (rt === "preview" || rt === "start") {
+    if (rt === "preview" || rt === "start" || rt === "start-pending") {
       const cfg = readCfg(b);
       const needDeriv = allow(cfg, "deriv");
       let d = null;
       if (needDeriv) d = Deriv.connected() ? await Deriv.open(cfg.mode).catch(async (e) => {
-        if (rt === "start") throw e;
+        if (rt !== "preview") throw e;
         return await Deriv.publicSession().catch(() => null);
       }) : rt === "preview" ? await Deriv.publicSession().catch(() => null) : null;
       try {
