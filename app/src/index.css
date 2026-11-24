@@ -674,3 +674,13 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .wait-list p { margin: 4px 0 0; }
 .wait-recent summary { cursor: pointer; color: var(--mist); margin-top: 6px; }
 .btn.small { padding: 3px 10px; font-size: 12.5px; }
+.wto .wto-sub { margin-top: 10px; }
+.waiting.has-ask { border-color: var(--gold, #b8860b); }
+.ask-card { background: var(--hull); border-radius: 8px; padding: 10px 12px !important; margin-bottom: 8px; border: 1px solid var(--rule) !important; }
+.ask-card p { margin: 6px 0; }
+.ask-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.ask-row .money-in { max-width: 200px; }
+.ask-figs { flex: 1; min-width: 240px; }
+.wait-ctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 6px; font-size: 13.5px; }
+.wait-ctl .small-in { max-width: 150px; }
+.ask-banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

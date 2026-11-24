@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fmt } from "../engine/analyze";
 import { BrokerSelect, brokerLabel, curFor } from "../lib/brokers";
 import { auto, paper, save, store, type AutoCfg, type AutoPick, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
-import WhenToOpen, { defaultWait, levelProblem, waitSentence, type Wait } from "./WhenToOpen";
+import WhenToOpen, { defaultWait, levelProblem, waitFields, waitSentence, type Wait } from "./WhenToOpen";
 
 const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "10%"], ["balanced", "Balanced", "20%"], ["bold", "Bold", "35%"], ["max", "Max profit", "50%"]];
 const SPLITS: [AutoCfg["alloc"], string, string][] = [
@@ -32,7 +32,7 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
   const [done, setDone] = useState("");
   const many = picks.length > 1;
   const live = s.mode === "live";
-  const [wait, setWait] = useState<Wait>(() => defaultWait(picks));
+  const [wait, setWait] = useState<Wait>(() => defaultWait(picks, "real"));
   const waiting = wait.mode !== "now";
   const waitBad = !many && wait.mode === "price" ? levelProblem(picks[0]!, wait.level) : "";
   const cfg: AutoCfg = { broker: s.broker, mode: s.mode, amount: s.amount, count: picks.length, horizon: "48h", strict: 65, risk: s.risk, alloc: many ? s.alloc : "equal", custom: null, fallback: false, picks };
@@ -59,10 +59,10 @@ export default function RealTrade({ picks, appKey, onClose, onNeedKey, onWatch }
       const per = many && s.alloc !== "each" ? s.amount / picks.length : s.amount;
       const saved: string[] = [], bad: string[] = [];
       for (const p of picks) {
-        try { await paper.pendingAdd(appKey, { kind: "real", pick: p, waitFor: wait.mode, level: wait.level, hours: wait.hours, minScore: wait.minScore, cfg: { broker: s.broker, mode: s.mode, amount: Math.round(per * 100) / 100, risk: s.risk, alloc: "equal", horizon: "48h", strict: 65, custom: null, fallback: false } }); saved.push(p.label); }
+        try { await paper.pendingAdd(appKey, { kind: "real", pick: p, ...waitFields(wait), cfg: { broker: s.broker, mode: s.mode, amount: Math.round(per * 100) / 100, risk: s.risk, alloc: "equal", horizon: "48h", strict: 65, custom: null, fallback: false } }); saved.push(p.label); }
         catch (e) { bad.push(`${p.label}: ${(e as Error).message}`); }
       }
-      if (saved.length) setDone(`Waiting order${saved.length > 1 ? "s" : ""} saved for ${saved.join(", ")}${live ? " (real money)" : " (demo)"}. ${!many ? waitSentence(picks[0]!, wait) + " " : ""}When the entry comes, Viko places the trade on your broker and manages it like any other: trailing stop-loss, take-profit and alerts. If the stop-loss level is hit first or time runs out, it's cancelled at no cost.`);
+      if (saved.length) setDone(`Waiting order${saved.length > 1 ? "s" : ""} saved for ${saved.join(", ")}${live ? " (real money)" : " (demo)"}. ${!many ? waitSentence(picks[0]!, wait) + " " : ""}${wait.askFirst ? "When the entry comes, Viko alerts you; you check the price, adjust the amount and approve or skip. Approved trades are" : "When the entry comes, Viko places the trade on your broker. It's then"} managed like any other: trailing stop-loss, take-profit and alerts. If the stop-loss level is hit first or time runs out, it's cancelled at no cost.`);
       if (bad.length) setErr(bad.join(" "));
       setBusy(false);
       return;

@@ -165,8 +165,12 @@ export const paper = {
   pendingAdd: (key: string, b: Record<string, unknown>): Promise<{ pending: PendingOrder }> => pfetch(key, "pending-add", b),
   pendingList: (key: string): Promise<{ waiting: PendingOrder[]; recent: PendingOrder[] }> => pfetch(key, "pending-list"),
   pendingCancel: (key: string, id: string) => pfetch(key, "pending-cancel", { id }),
+  pendingApprove: (key: string, id: string, amount: number): Promise<{ note: string }> => pfetch(key, "pending-approve", { id, amount }),
+  pendingSkip: (key: string, id: string) => pfetch(key, "pending-skip", { id }),
+  pendingEdit: (key: string, b: { id: string; amount?: number; level?: number; askFirst?: boolean }) => pfetch(key, "pending-edit", b),
 };
-export type PendingOrder = { id: string; kind: "paper" | "real"; symbol: string; label: string; tf: string; dir: "long" | "short"; score: number; name: string; stop: number; target1: number; target2: number; wait_for: "price" | "confirm"; level: number | null; start_price: number | null; min_score: number; amount: number | null; close_after_hours: number | null; cfg: { broker?: string; mode?: string; amount?: number } | null; status: "waiting" | "opened" | "cancelled" | "expired" | "failed"; note: string | null; created_at: string; expires_at: string; done_at: string | null; last_price: number | null };
+export type PendingOrder = { id: string; kind: "paper" | "real"; symbol: string; label: string; tf: string; dir: "long" | "short"; score: number; name: string; stop: number; target1: number; target2: number; wait_for: "price" | "confirm"; level: number | null; start_price: number | null; min_score: number; amount: number | null; close_after_hours: number | null; cfg: { broker?: string; mode?: string; amount?: number } | null; status: "waiting" | "asking" | "opened" | "cancelled" | "expired" | "failed" | "skipped"; note: string | null;
+  ask_first: boolean; ask_minutes: number; no_answer: "wait" | "cancel"; ask_until: string | null; ask_price: number | null; ask_levels: { stop: number; target1: number; target2: number; score: number; name: string } | null; created_at: string; expires_at: string; done_at: string | null; last_price: number | null };
 
 // ---------- News, events and opinion ----------
 export const NEWS = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-news";

@@ -18,6 +18,7 @@ import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
 import RealTrade from "./components/RealTrade";
 import MyTrades from "./components/MyTrades";
 import { TrackRecord } from "./components/TrackRecord";
+import { ApprovalBanner } from "./components/WhenToOpen";
 import PhoneSetup, { takeSetupKey } from "./components/PhoneSetup";
 import PaperTicket, { type PaperPick } from "./components/PaperTicket";
 import Alerts from "./components/Alerts";
@@ -268,6 +269,7 @@ export default function App() {
         </aside>
 
         <main className="main">
+          {jkey && <ApprovalBanner appKey={jkey} go={(v) => { go(v); setTimeout(() => document.getElementById("waiting")?.scrollIntoView({ behavior: "smooth" }), 400); }} />}
           {setupNote && !setupDone && <p className="ok-msg setup-note">{setupNote} <button className="link" onClick={() => { setSetupDone(true); setSettingsOpen(true); }}>Open Settings</button></p>}
           {view === "analyse" && (
             <>

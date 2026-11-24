@@ -4,7 +4,7 @@ import { fmt } from "../engine/analyze";
 import { TF_HOURS } from "../engine/layman";
 import type { Tf } from "../engine/types";
 import { paper, save, store, type AutoPick } from "../lib/api";
-import WhenToOpen, { defaultWait, levelProblem, waitSentence, type Wait } from "./WhenToOpen";
+import WhenToOpen, { defaultWait, levelProblem, waitFields, waitSentence, type Wait } from "./WhenToOpen";
 
 /** A setup to paper trade, with Viko's latest price for it (the trade itself opens at the live price). */
 export type PaperPick = AutoPick & { entry: number; tip?: string };
@@ -52,7 +52,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
     const ok: string[] = [], bad: string[] = [];
     for (const p of picks) {
       try {
-        if (waiting) { await paper.pendingAdd(appKey, { kind: "paper", pick: { ...p, tip: p.tip ?? "" }, waitFor: wait.mode, level: wait.level, hours: wait.hours, minScore: wait.minScore, amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); continue; }
+        if (waiting) { await paper.pendingAdd(appKey, { kind: "paper", pick: { ...p, tip: p.tip ?? "" }, ...waitFields(wait), amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); continue; }
         await paper.open(appKey, { symbol: p.symbol, label: p.label, tf: p.tf, dir: p.dir, stop: p.stop, target1: p.target1, target2: p.target2, setup: `${p.name}, ${p.tf}`, score: p.score, tip: p.tip ?? "", source: "manual", amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); }
       catch (e) { bad.push(`${p.label}: ${(e as Error).message}`); }
     }
@@ -70,7 +70,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
 
         {done ? (
           <>
-            <p className="ok-msg">{waiting ? `Waiting order${done.length > 1 ? "s" : ""} saved: ${done.join(", ")}. ${many ? "Each opens" : "It opens"} only when the entry comes; you'll get an alert when it does.` : `${done.length} paper trade${done.length > 1 ? "s" : ""} opened: ${done.join(", ")}.`}</p>
+            <p className="ok-msg">{waiting ? `Waiting order${done.length > 1 ? "s" : ""} saved: ${done.join(", ")}. ${wait.askFirst ? `When the entry comes, Viko alerts you and waits for your OK (${wait.askMinutes < 60 ? `${wait.askMinutes} min` : `${wait.askMinutes / 60} h`} to answer).` : `${many ? "Each opens" : "It opens"} only when the entry comes; you'll get an alert when it does.`}` : `${done.length} paper trade${done.length > 1 ? "s" : ""} opened: ${done.join(", ")}.`}</p>
             {err && <p className="err">Not {waiting ? "saved" : "opened"}: {err}</p>}
             {waiting ? <p>{!many && waitSentence(picks[0]!, wait)} You can see or cancel {many ? "them" : "it"} on the Paper page, under "Waiting for entry".</p> : <p>Come back around <b>{when(tot.h0)}</b>.</p>}
             <div className="rt-actions"><button className="btn" onClick={onClose}>Close</button><button className="btn primary" onClick={onDone}>See them in Paper trading</button></div>

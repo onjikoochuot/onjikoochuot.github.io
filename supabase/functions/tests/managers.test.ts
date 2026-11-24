@@ -21,7 +21,7 @@ function fakeDb(rows: Record<string, any> = {}) {
   const from = (table: string) => {
     const q: any = { table, op: "select", value: null, single: false };
     const b: any = {};
-    for (const m of ["select", "eq", "in", "or", "gte", "lte", "neq", "order", "limit", "is"]) b[m] = () => b;
+    for (const m of ["select", "eq", "in", "or", "gte", "lte", "neq", "order", "limit", "is", "not", "gt"]) b[m] = () => b;
     b.maybeSingle = b.single = () => { q.single = true; return b; };
     for (const op of ["update", "insert", "upsert", "delete"]) b[op] = (v: any) => { q.op = op; q.value = v; writes.push(q); return b; };
     b.then = (r: any, j: any) => Promise.resolve({ data: q.op === "select" ? (q.single ? rows[table] ?? null : rows[`${table}[]`] ?? []) : q.op === "insert" ? { id: "new", ...(Array.isArray(q.value) ? {} : q.value) } : null, error: null, count: 0 }).then(r, j);
@@ -287,4 +287,50 @@ Deno.test("Waiting order (real money): when the entry comes, the order goes to t
   assertEquals(w.autoCalls.length, 1);
   assertEquals([w.autoCalls[0].key, w.autoCalls[0].body.broker, w.autoCalls[0].body.picks[0].stop, w.autoCalls[0].body.count], ["cron-key", "binance", 95, 1]);
   assertEquals(pendingStatus(db), ["opened"]);
+});
+
+Deno.test("Ask me first: the entry comes → Viko asks (alert), trades nothing, and goes back to waiting if you don't answer", async () => {
+  pendingWorld(97.9);
+  let db = fakeDb({ "viko_pending[]": [waitRow({ ask_first: true, ask_minutes: 30, no_answer: "wait" })] });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), ["asking"]);
+  const al = db.writes.find((x: any) => x.table === "viko_alerts");
+  assert(al && al.value.kind === "open" && al.value.title.startsWith("Approve?"), "approval alert sent");
+  assert(!db.writes.some((x: any) => x.table === "viko_paper_trades"), "nothing traded yet");
+  db = fakeDb({ "viko_pending[]": [waitRow({ status: "asking", ask_first: true, no_answer: "wait", ask_until: new Date(Date.now() - 1000).toISOString(), ask_levels: { stop: 95, target1: 110, target2: 120, score: 82, name: "Wave 3" } })] });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), ["waiting"], "no answer: waiting again");
+  db = fakeDb({ "viko_pending[]": [waitRow({ status: "asking", ask_first: true, no_answer: "cancel", ask_until: new Date(Date.now() - 1000).toISOString(), ask_levels: { stop: 95, target1: 110, target2: 120, score: 82, name: "Wave 3" } })] });
+  await paper.checkPending(db, "k");
+  assertEquals(pendingStatus(db), ["cancelled"], "no answer: cancelled when chosen");
+});
+
+Deno.test("Approve: opens with the amount you chose, and refuses if the price has run away", async () => {
+  const w = pendingWorld(98.5);
+  const asking = waitRow({ status: "asking", ask_first: true, ask_levels: { stop: 95, target1: 110, target2: 120, score: 82, name: "Wave 3" } });
+  let db = fakeDb({ viko_pending: asking, viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  await paper.approvePending(db, "w1", "k", 250);
+  const ins = db.writes.find((x: any) => x.table === "viko_paper_trades" && x.op === "insert");
+  assertAlmostEquals(ins.value.qty * ins.value.entry, 250, 1e-6);
+  assertEquals(pendingStatus(db), ["opened"]);
+  w.price = 108; // target 1 at 110 now pays far less than the risk
+  db = fakeDb({ viko_pending: asking, viko_paper_account: { id: "main", balance: 10000, risk_pct: 1 } });
+  let msg = "";
+  try { await paper.approvePending(db, "w1", "k", 250); } catch (e) { msg = (e as Error).message; }
+  assert(msg.includes("less than the risk"), "refused: " + msg);
+  assert(!db.writes.some((x: any) => x.table === "viko_paper_trades"), "nothing opened");
+});
+
+Deno.test("Edit: change the amount of a waiting order (paper and real)", async () => {
+  pendingWorld(100);
+  let db = fakeDb({ viko_pending: waitRow(), viko_paper_account: { id: "main", balance: 10000 } });
+  await paper.editPending(db, { id: "w1", amount: 750 });
+  assertEquals(db.writes.find((x: any) => x.table === "viko_pending").value, { amount: 750 });
+  db = fakeDb({ viko_pending: waitRow({ kind: "real", cfg: { broker: "bybit", mode: "live", amount: 50 } }) });
+  await paper.editPending(db, { id: "w1", amount: 20 });
+  assertEquals(db.writes.find((x: any) => x.table === "viko_pending").value.cfg, { broker: "bybit", mode: "live", amount: 20 });
+  let msg = "";
+  db = fakeDb({ viko_pending: waitRow(), viko_paper_account: { id: "main", balance: 100 } });
+  try { await paper.editPending(db, { id: "w1", amount: 750 }); } catch (e) { msg = (e as Error).message; }
+  assert(msg.includes("more than your paper balance"), msg);
 });

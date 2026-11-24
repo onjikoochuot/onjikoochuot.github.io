@@ -8,7 +8,8 @@
 // POST /viko-paper/pending-add    {kind:"paper"|"real", pick, waitFor:"price"|"confirm", level?, minScore?, hours, amount?, closeAfterHours?, cfg?}
 // GET  /viko-paper/pending-list
 // POST /viko-paper/pending-cancel {id}
-// POST /viko-paper/pending-check  (cron, every 5 minutes) open the ones whose condition is met
+// POST /viko-paper/pending-check  (cron, every 5 minutes) open the ones whose condition is met (or ask you first)
+// POST /viko-paper/pending-approve {id, amount?}   POST /viko-paper/pending-skip {id}   POST /viko-paper/pending-edit {id, amount?, level?, askFirst?}
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { nextPeak, trailStop } from "./trail.ts";
@@ -227,7 +228,7 @@ async function addPending(db: DB, b: any) {
   }
   if (kind === "paper") { if (!(num(b.amount) > 0)) throw new UserErr("Enter how much paper money to put into this trade."); }
   else if (!b.cfg || typeof b.cfg !== "object") throw new UserErr("Choose the broker, account and amount first.");
-  const { count } = await db.from("viko_pending").select("id", { count: "exact", head: true }).eq("status", "waiting");
+  const { count } = await db.from("viko_pending").select("id", { count: "exact", head: true }).in("status", ["waiting", "asking"]);
   if ((count ?? 0) >= MAX_WAITING) throw new UserErr(`You already have ${MAX_WAITING} waiting orders. Cancel one first.`);
   const hours = Math.min(24 * 14, Math.max(1, num(b.hours) || 72));
   const row = {
@@ -237,25 +238,58 @@ async function addPending(db: DB, b: any) {
     amount: kind === "paper" ? num(b.amount) : null, close_after_hours: num(b.closeAfterHours) > 0 ? num(b.closeAfterHours) : null,
     cfg: kind === "real" ? { ...b.cfg, picks: undefined } : null, tip: String(p.tip ?? "").slice(0, 1500),
     expires_at: new Date(Date.now() + hours * 3600000).toISOString(), last_price: price,
+    ask_first: b.askFirst === true, ask_minutes: Math.min(24 * 60, Math.max(5, Math.round(num(b.askMinutes) || 60))), no_answer: b.noAnswer === "cancel" ? "cancel" : "wait",
   };
   const { data, error } = await db.from("viko_pending").insert(row).select().single();
   if (error) throw error;
-  if (kind === "paper") await log(db, null, "wait", `Waiting to ${long ? "buy" : "sell"} ${row.label} (${row.tf}): ${waitFor === "price" ? `opens when the price reaches ${fmt(level!)} (now ${fmt(price)})` : `opens when Viko confirms the setup at ${row.min_score}%+`}. Gives up after ${hours} hours.`);
+  if (kind === "paper") await log(db, null, "wait", `Waiting to ${long ? "buy" : "sell"} ${row.label} (${row.tf}): ${waitFor === "price" ? `opens when the price reaches ${fmt(level!)} (now ${fmt(price)})` : `opens when Viko confirms the setup at ${row.min_score}%+`}. ${row.ask_first ? " Viko asks you before opening it." : ""} Gives up after ${hours} hours.`);
   return data;
 }
 
 class UserErr extends Error {}
 
-/** Check every waiting order once: cancel, expire, keep waiting, or open it. */
+type Lv = { stop: number; target1: number; target2: number; score: number; name: string };
+const APP = "https://onjikoochuot.github.io/";
+const amountOf = (r: any) => (r.kind === "paper" ? Number(r.amount) : Number(r.cfg?.amount ?? 0));
+const modeOf = (r: any) => (r.kind === "real" ? String(r.cfg?.mode ?? "live") : "paper");
+
+/** Is the trade still worth taking at this price? "" = yes; otherwise why not. */
+function stillGood(r: any, price: number, lv: Lv): string {
+  const long = r.dir === "long";
+  if (long ? price <= lv.stop : price >= lv.stop) return `The price is at or through the stop-loss (${fmt(lv.stop)}).`;
+  const risk = Math.abs(price - lv.stop), reward = long ? lv.target1 - price : price - lv.target1;
+  if (reward <= 0) return `The price has already passed target 1 (${fmt(lv.target1)}).`;
+  if (reward < risk) return `At ${fmt(price)} target 1 would pay less than the risk.`;
+  return "";
+}
+
+/** Open it: a paper trade, or a real-money order through Auto-trade. */
+async function fire(db: DB, r: any, price: number, lv: Lv, key: string, amount = amountOf(r)): Promise<{ ok: boolean; note: string }> {
+  const how = r.wait_for === "confirm" ? ` after Viko confirmed the setup at ${lv.score}%` : "";
+  if (r.kind === "paper") {
+    const { count } = await db.from("viko_paper_trades").select("id", { count: "exact", head: true }).eq("status", "open");
+    if ((count ?? 0) >= MAX_OPEN) return { ok: false, note: `You already have ${MAX_OPEN} open paper trades.` };
+    const acc = await account(db);
+    const t = await openTrade(db, acc, { symbol: r.symbol, label: r.label, tf: r.tf, dir: r.dir, stop: lv.stop, target1: lv.target1, target2: lv.target2, setup: `${lv.name}, ${r.tf} (waited for entry)`.slice(0, 120), score: lv.score, tip: r.tip, source: "manual", amount, closeAfterHours: r.close_after_hours ?? undefined }, price);
+    return { ok: true, note: `Entry reached: opened at ${fmt(Number(t.entry))} with $${amount.toFixed(2)}${how}.` };
+  }
+  const pick = { symbol: r.symbol, label: r.label, market: r.market, tf: r.tf, dir: r.dir, score: lv.score, name: lv.name, stop: lv.stop, target1: lv.target1, target2: lv.target2, expectBars: Number(r.expect_bars) };
+  const res = await fetch(`${AUTO}/start-pending?forceFunctionRegion=ap-south-1`, { method: "POST", headers: { "content-type": "application/json", "x-viko-key": key }, body: JSON.stringify({ ...r.cfg, amount, count: 1, picks: [pick] }) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.placed) return { ok: false, note: `The broker order didn't go through: ${j.error ?? (j.skipped?.[0] ?? "unknown reason")}` };
+  return { ok: true, note: `Entry reached: placed ${amount.toFixed(2)} at about ${fmt(price)}${how}.` };
+}
+
+/** Check every waiting order once: cancel, expire, keep waiting, ask you, or open it. */
 async function checkPending(db: DB, key: string) {
-  const { data: rows } = await db.from("viko_pending").select("*").eq("status", "waiting").order("created_at").limit(MAX_WAITING);
+  const { data: rows } = await db.from("viko_pending").select("*").in("status", ["waiting", "asking"]).order("created_at").limit(MAX_WAITING);
   const out: string[] = [];
   if (!rows?.length) return out;
   const q = await quotes([...new Set<string>(rows.map((r: any) => String(r.symbol)))]).catch(() => ({} as Record<string, { price: number }>));
   const done = async (r: any, status: string, note: string) => {
     await db.from("viko_pending").update({ status, note, done_at: new Date().toISOString(), checked_at: new Date().toISOString() }).eq("id", r.id);
     if (r.kind === "paper") await log(db, null, status === "opened" ? "wait-open" : "wait-end", `${r.label}: ${note}`);
-    if (status !== "opened") await alert(db, "close", `Waiting order ${status}: ${r.label}`, note, null, r.kind === "real" ? String(r.cfg?.mode ?? "live") : "paper");
+    if (status !== "opened") await alert(db, "close", `Waiting order ${status}: ${r.label}`, note, null, modeOf(r));
     out.push(`${r.label}: ${status}`);
   };
   for (const r of rows as any[]) {
@@ -266,8 +300,20 @@ async function checkPending(db: DB, key: string) {
       if (!price) continue;
       await db.from("viko_pending").update({ last_price: price, checked_at: new Date().toISOString() }).eq("id", r.id);
       // The idea failed before it started: price went through the stop-loss.
-      if (long ? price <= r.stop : price >= r.stop) { await done(r, "cancelled", `The price reached the stop-loss level (${fmt(Number(r.stop))}) before the entry, so the setup failed and nothing was traded.`); continue; }
-      let lv = { stop: Number(r.stop), target1: Number(r.target1), target2: Number(r.target2), score: Number(r.score), name: String(r.name) };
+      const stop = r.status === "asking" && r.ask_levels ? Number(r.ask_levels.stop) : Number(r.stop);
+      if (long ? price <= stop : price >= stop) { await done(r, "cancelled", `The price reached the stop-loss level (${fmt(stop)}) before the trade opened, so the setup failed and nothing was traded.`); continue; }
+      if (r.status === "asking") {
+        // Waiting for your answer. Out of time: back to waiting, or cancel, as you chose.
+        if (r.ask_until && Date.now() >= Date.parse(r.ask_until)) {
+          if (r.no_answer === "cancel") await done(r, "cancelled", "You didn't approve it in time, so nothing was traded.");
+          else {
+            await db.from("viko_pending").update({ status: "waiting", asked_at: null, ask_until: null, ask_price: null, ask_levels: null, note: "You didn't answer in time, so Viko is waiting for the entry again." }).eq("id", r.id);
+            out.push(`${r.label}: back to waiting`);
+          }
+        }
+        continue;
+      }
+      let lv: Lv = { stop: Number(r.stop), target1: Number(r.target1), target2: Number(r.target2), score: Number(r.score), name: String(r.name) };
       if (r.wait_for === "price") {
         const lvl = Number(r.level), from = Number(r.start_price);
         const reached = from <= lvl ? price >= lvl : price <= lvl;
@@ -279,26 +325,70 @@ async function checkPending(db: DB, key: string) {
         if (!s) continue;
         lv = { stop: s.stop, target1: s.target1, target2: s.target2, score: s.score, name: `${s.name} (${s.degree})` };
       }
-      // Still worth taking at this price? Target 1 must be ahead and pay at least 1× the risk.
-      const risk = Math.abs(price - lv.stop), reward = long ? lv.target1 - price : price - lv.target1;
-      if (reward <= 0) { await done(r, "cancelled", `The price ran past target 1 (${fmt(lv.target1)}) before the entry, so there was nothing left to gain.`); continue; }
-      if (reward < risk) { if (r.wait_for === "price") await done(r, "cancelled", `At ${fmt(price)} target 1 would pay less than the risk, so Viko didn't enter.`); continue; }
-      if (r.kind === "paper") {
-        const { count } = await db.from("viko_paper_trades").select("id", { count: "exact", head: true }).eq("status", "open");
-        if ((count ?? 0) >= MAX_OPEN) continue; // wait for a free slot
-        const acc = await account(db);
-        const t = await openTrade(db, acc, { symbol: r.symbol, label: r.label, tf: r.tf, dir: r.dir, stop: lv.stop, target1: lv.target1, target2: lv.target2, setup: `${lv.name}, ${r.tf} (waited for entry)`.slice(0, 120), score: lv.score, tip: r.tip, source: "manual", amount: Number(r.amount), closeAfterHours: r.close_after_hours ?? undefined }, price);
-        await done(r, "opened", `Entry reached: opened at ${fmt(Number(t.entry))}${r.wait_for === "confirm" ? ` after Viko confirmed the setup at ${lv.score}%` : ""}.`);
-      } else {
-        const pick = { symbol: r.symbol, label: r.label, market: r.market, tf: r.tf, dir: r.dir, score: lv.score, name: lv.name, stop: lv.stop, target1: lv.target1, target2: lv.target2, expectBars: Number(r.expect_bars) };
-        const res = await fetch(`${AUTO}/start-pending?forceFunctionRegion=ap-south-1`, { method: "POST", headers: { "content-type": "application/json", "x-viko-key": key }, body: JSON.stringify({ ...r.cfg, count: 1, picks: [pick] }) });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok || !j.placed) await done(r, "failed", `The entry came at ${fmt(price)}, but the broker order didn't go through: ${j.error ?? (j.skipped?.[0] ?? "unknown reason")}`);
-        else await done(r, "opened", `Entry reached: placed with real money at about ${fmt(price)}${r.wait_for === "confirm" ? ` after Viko confirmed the setup at ${lv.score}%` : ""}.`);
+      const why = stillGood(r, price, lv);
+      if (why) {
+        // A confirmed setup can recover on a later check; a fixed price that no longer pays is cancelled.
+        if (r.wait_for === "price" || why.includes("passed target 1")) await done(r, "cancelled", `${why} Viko didn't enter.`);
+        continue;
       }
+      if (r.ask_first) {
+        const mins = Math.max(5, Number(r.ask_minutes) || 60);
+        await db.from("viko_pending").update({ status: "asking", asked_at: new Date().toISOString(), ask_until: new Date(Date.now() + mins * 60000).toISOString(), ask_price: price, ask_levels: lv, note: null }).eq("id", r.id);
+        const page = r.kind === "paper" ? "#paper" : "#trades";
+        await alert(db, "open", `Approve? ${r.label} reached your entry`, `${long ? "Buy" : "Sell"} ${r.label} (${r.tf}) at about ${fmt(price)}${r.wait_for === "confirm" ? `, setup confirmed at ${lv.score}%` : ""}. Stop-loss ${fmt(lv.stop)}, target 1 ${fmt(lv.target1)}. Amount ${amountOf(r).toFixed(2)}${r.kind === "paper" ? " paper dollars" : ` (${modeOf(r) === "live" ? "real money" : "demo"})`}. Approve, change the amount or skip in Viko within ${mins} minutes: ${APP}${page}`, null, modeOf(r));
+        if (r.kind === "paper") await log(db, null, "wait-ask", `${r.label}: entry reached at ${fmt(price)}. Waiting for your approval (${mins} min).`);
+        out.push(`${r.label}: asking`);
+        continue;
+      }
+      const res = await fire(db, r, price, lv, key);
+      await done(r, res.ok ? "opened" : "failed", res.ok ? res.note : `The entry came at ${fmt(price)}, but ${res.note}`);
     } catch (e) { await db.from("viko_pending").update({ note: `Last check failed: ${(e as Error).message}`.slice(0, 300), checked_at: new Date().toISOString() }).eq("id", r.id); }
   }
   return out;
+}
+
+/** You approved an order that reached its entry: re-check the price, then open it with the amount you chose. */
+async function approvePending(db: DB, id: string, key: string, amountIn: unknown) {
+  const { data: r } = await db.from("viko_pending").select("*").eq("id", id).maybeSingle();
+  if (!r || r.status !== "asking") throw new UserErr("This order isn't waiting for your approval any more.");
+  const amount = amountIn != null && amountIn !== "" ? num(amountIn) : amountOf(r);
+  if (!(amount > 0)) throw new UserErr("Enter an amount above zero.");
+  const q = await quotes([r.symbol]);
+  const price = q[r.symbol]?.price;
+  if (!price) throw new UserErr("Couldn't get a live price. Try again in a moment.");
+  const lv = r.ask_levels as Lv;
+  const why = stillGood(r, price, lv);
+  if (why) throw new UserErr(`${why} It's safer not to enter now. Skip it, or leave it and Viko keeps watching until the approval time runs out.`);
+  const res = await fire(db, r, price, lv, key, amount);
+  if (!res.ok) throw new UserErr(res.note);
+  const patch: any = { status: "opened", note: `Approved by you. ${res.note}`, done_at: new Date().toISOString() };
+  if (r.kind === "paper") patch.amount = amount; else patch.cfg = { ...r.cfg, amount };
+  await db.from("viko_pending").update(patch).eq("id", id);
+  if (r.kind === "paper") await log(db, null, "wait-open", `${r.label}: approved by you. ${res.note}`);
+  return res.note;
+}
+
+/** Change a waiting order before it opens: amount, entry price or how long it waits. */
+async function editPending(db: DB, b: any) {
+  const { data: r } = await db.from("viko_pending").select("*").eq("id", String(b.id)).maybeSingle();
+  if (!r || !["waiting", "asking"].includes(r.status)) throw new UserErr("This order can't be changed any more.");
+  const patch: any = {};
+  if (b.amount !== undefined) {
+    const a = num(b.amount);
+    if (!(a > 0)) throw new UserErr("Enter an amount above zero.");
+    if (r.kind === "paper") { const acc = await account(db); if (a > Number(acc.balance)) throw new UserErr(`That's more than your paper balance (${Number(acc.balance).toFixed(2)}).`); patch.amount = a; }
+    else patch.cfg = { ...r.cfg, amount: a };
+  }
+  if (b.level !== undefined && r.wait_for === "price" && r.status === "waiting") {
+    const lvl = num(b.level), long = r.dir === "long";
+    if (!(lvl > 0) || (long ? lvl <= r.stop || lvl >= r.target1 : lvl >= r.stop || lvl <= r.target1)) throw new UserErr(`Choose an entry between the stop-loss (${fmt(Number(r.stop))}) and target 1 (${fmt(Number(r.target1))}).`);
+    const q = await quotes([r.symbol]);
+    Object.assign(patch, { level: lvl, start_price: q[r.symbol]?.price ?? r.start_price });
+  }
+  if (typeof b.askFirst === "boolean") patch.ask_first = b.askFirst;
+  if (!Object.keys(patch).length) throw new UserErr("Nothing to change.");
+  const { data } = await db.from("viko_pending").update(patch).eq("id", r.id).select().single();
+  return data;
 }
 
 Deno.serve(async (req) => {
@@ -329,8 +419,8 @@ Deno.serve(async (req) => {
     }
     if (route === "pending-list") {
       const [{ data: waiting }, { data: recent }] = await Promise.all([
-        db.from("viko_pending").select("*").eq("status", "waiting").order("created_at", { ascending: false }),
-        db.from("viko_pending").select("*").neq("status", "waiting").gt("done_at", new Date(Date.now() - 3 * 86400000).toISOString()).order("done_at", { ascending: false }).limit(30),
+        db.from("viko_pending").select("*").in("status", ["waiting", "asking"]).order("created_at", { ascending: false }),
+        db.from("viko_pending").select("*").not("status", "in", "(waiting,asking)").gt("done_at", new Date(Date.now() - 3 * 86400000).toISOString()).order("done_at", { ascending: false }).limit(30),
       ]);
       return json({ waiting: waiting ?? [], recent: recent ?? [] });
     }
@@ -348,11 +438,20 @@ Deno.serve(async (req) => {
       try { return json({ pending: await addPending(db, b) }); } catch (e) { if (e instanceof UserErr) return json({ error: e.message }, 400); throw e; }
     }
     if (route === "pending-cancel") {
-      const { data } = await db.from("viko_pending").update({ status: "cancelled", note: "Cancelled by you.", done_at: new Date().toISOString() }).eq("id", String(b.id)).eq("status", "waiting").select();
+      const { data } = await db.from("viko_pending").update({ status: "cancelled", note: "Cancelled by you.", done_at: new Date().toISOString() }).eq("id", String(b.id)).in("status", ["waiting", "asking"]).select();
       if (!data?.length) return json({ error: "That order isn't waiting any more." }, 400);
       return json({ ok: true });
     }
     if (route === "pending-check") return json({ ok: true, changed: await checkPending(db, req.headers.get("x-viko-key") ?? "") });
+    if (route === "pending-approve" || route === "pending-edit" || route === "pending-skip") {
+      try {
+        if (route === "pending-approve") return json({ ok: true, note: await approvePending(db, String(b.id), req.headers.get("x-viko-key") ?? "", b.amount) });
+        if (route === "pending-edit") return json({ pending: await editPending(db, b) });
+        const { data } = await db.from("viko_pending").update({ status: "skipped", note: "Skipped by you, nothing traded.", done_at: new Date().toISOString() }).eq("id", String(b.id)).in("status", ["waiting", "asking"]).select();
+        if (!data?.length) throw new UserErr("That order isn't waiting any more.");
+        return json({ ok: true });
+      } catch (e) { if (e instanceof UserErr) return json({ error: e.message }, 400); throw e; }
+    }
     if (route === "history-delete") {
       // Deletes finished trades only (never open ones). The balance is not changed.
       const ids: string[] = Array.isArray(b.ids) ? b.ids.map(String).slice(0, 500) : [];
@@ -408,4 +507,4 @@ Deno.serve(async (req) => {
 });
 
 // For the management tests.
-export { manage, closePart, checkPending };
+export { manage, closePart, checkPending, approvePending, editPending };

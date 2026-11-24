@@ -47,7 +47,7 @@ await pg.locator(".rt-ticket .rt-actions .btn").first().click();
 await solRow.getByRole("button", { name: "Real (wait)" }).click(); await pg.waitForTimeout(800);
 await pg.locator(".wto").getByRole("radio", { name: "When Viko confirms" }).click();
 await pg.locator(".wto").getByRole("radio", { name: "1 week" }).click();
-await pg.screenshot({ path: "/tmp/wait-real.png" });
+await pg.locator(".wto").screenshot({ path: "/tmp/wait-real.png" });
 await pg.locator(".rt-ticket .rt-actions .btn.primary").click(); await pg.waitForTimeout(500);
 console.log("real done:", (await pg.locator(".rt-ticket .ok-msg").innerText()).slice(0, 160));
 console.log("sent:", JSON.stringify(sent.map((s) => ({ kind: s.kind, waitFor: s.waitFor, level: s.level, hours: s.hours, amount: s.amount, cfg: s.cfg && { broker: s.cfg.broker, mode: s.cfg.mode, amount: s.cfg.amount } }))));
