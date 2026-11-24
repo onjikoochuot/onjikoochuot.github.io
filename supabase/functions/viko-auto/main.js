@@ -181,6 +181,11 @@ async function bnRealized(mode, sym, sinceMs) {
   const trades = await bn(mode, "GET", "/fapi/v1/userTrades", { symbol: sym, startTime: Math.max(sinceMs - 6e4, Date.now() - 6.9 * 864e5), limit: 1e3 });
   return trades.reduce((a, t) => a + Number(t.realizedPnl) - (t.commissionAsset === "USDT" ? Number(t.commission) : 0), 0);
 }
+async function bnLastFill(mode, sym, sinceMs) {
+  const trades = await bn(mode, "GET", "/fapi/v1/userTrades", { symbol: sym, startTime: Math.max(sinceMs - 6e4, Date.now() - 6.9 * 864e5), limit: 1e3 });
+  const last = [...trades].sort((a, b) => Number(a.time ?? 0) - Number(b.time ?? 0)).pop();
+  return last ? Number(last.price) : null;
+}
 async function bnClose(mode, sym) {
   await bn(mode, "DELETE", "/fapi/v1/algoOpenOrders", { symbol: sym }).catch(() => {
   });
@@ -274,6 +279,11 @@ async function byStop(mode, sym, stop, tick) {
 async function byRealized(mode, sym, sinceMs) {
   const res = await by(mode, "GET", "/v5/position/closed-pnl", { category: "linear", symbol: sym, startTime: Math.max(sinceMs - 6e4, Date.now() - 6.9 * 864e5), limit: 100 });
   return (res.list ?? []).reduce((a, x) => a + Number(x.closedPnl ?? 0), 0);
+}
+async function byLastExit(mode, sym, sinceMs) {
+  const res = await by(mode, "GET", "/v5/position/closed-pnl", { category: "linear", symbol: sym, startTime: Math.max(sinceMs - 6e4, Date.now() - 6.9 * 864e5), limit: 1 });
+  const x = res.list?.[0];
+  return x ? Number(x.avgExitPrice) : null;
 }
 async function byClose(mode, sym) {
   await by(mode, "POST", "/v5/order/cancel-all", { category: "linear", symbol: sym }).catch(() => {
@@ -1042,6 +1052,7 @@ async function manageBinance(db, p, endNow, why = "time") {
   if (!pos || endNow) {
     let exit = p.last_price;
     if (pos) exit = (await bnClose(mode, sym) ?? p.last_price * sc) / sc;
+    else exit = (await bnLastFill(mode, sym, since).catch(() => null) ?? p.last_price * sc) / sc;
     await bn(mode, "DELETE", "/fapi/v1/algoOpenOrders", { symbol: sym }).catch(() => {
     });
     const pnl = await bnRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
@@ -1133,7 +1144,8 @@ async function manageDeriv(db, p, d, endNow, why = "time") {
   }
   if (allSold) {
     const t2 = states.find((x) => x.c.role === "t2");
-    const reason = endNow ? why : total > 0 ? t2?.s && Number(t2.s.profit) > 0 && Math.abs(spot - p.target2) < Math.abs(spot - p.stop) ? "target 2" : p.t1_hit ? closeReason(p, spot) : "target 1" : closeReason(p, spot);
+    const exit = Number(t2?.s?.exit_tick ?? t2?.s?.sell_spot ?? spot);
+    const reason = endNow ? why : closeReason(p, exit);
     Object.assign(patch, { status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${total >= 0 ? "+" : ""}${r2(total)} USD.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)} USD`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} USD on ${p.stake} USD (${reason}). Deriv, last price ${fmt(spot)}.`, r2(total));
@@ -1147,6 +1159,7 @@ async function manageBybit(db, p, endNow, why = "time") {
   if (!pos || endNow) {
     let exit = p.last_price;
     if (pos) exit = await byClose(mode, sym) ?? p.last_price;
+    else exit = await byLastExit(mode, sym, since).catch(() => null) ?? p.last_price;
     await by(mode, "POST", "/v5/order/cancel-all", { category: "linear", symbol: sym }).catch(() => {
     });
     const pnl = await byRealized(mode, sym, since).catch(() => p.last_pnl ?? 0);
@@ -1182,6 +1195,7 @@ async function manageBybit(db, p, endNow, why = "time") {
 async function manageMt5(db, p, endNow, why = "time") {
   const mode = p.mode, legs = p.refs?.positions ?? [], digits = p.refs?.digits ?? 5, long = p.dir === "long";
   const done = { ...p.refs?.done ?? {} };
+  const exits = { ...p.refs?.exits ?? {} };
   const open = (await mt(mode, "GET", "/positions")).filter((x) => legs.some((l) => l.id === String(x.id)));
   if (endNow) for (const x of open) await mtTrade(mode, { actionType: "POSITION_CLOSE_ID", positionId: String(x.id) }).catch(() => {
   });
@@ -1190,11 +1204,13 @@ async function manageMt5(db, p, endNow, why = "time") {
     if (stillOpen.some((x) => String(x.id) === l.id) || l.id in done) continue;
     const deals = await mt(mode, "GET", `/history-deals/position/${encodeURIComponent(l.id)}`).catch(() => []);
     done[l.id] = deals.reduce((a, d) => a + Number(d.profit ?? 0) + Number(d.commission ?? 0) + Number(d.swap ?? 0), 0);
+    const out = deals.filter((d) => /OUT/.test(String(d.entryType ?? ""))).pop();
+    if (out) exits[l.id] = Number(out.price);
   }
   const openPnl = stillOpen.reduce((a, x) => a + Number(x.profit ?? 0) + Number(x.swap ?? 0) + Number(x.commission ?? 0), 0);
   const realized = Object.values(done).reduce((a, x) => a + x, 0);
   const spot = Number(stillOpen[0]?.currentPrice ?? p.last_price);
-  const patch = { last_price: spot, last_pnl: r2(openPnl + realized), refs: { ...p.refs, done }, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  const patch = { last_price: spot, last_pnl: r2(openPnl + realized), refs: { ...p.refs, done, exits }, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
   const t1 = legs.find((l) => l.role === "t1"), t2open = stillOpen.find((x) => legs.some((l) => l.role === "t2" && l.id === String(x.id)));
   const t1Now = !p.t1_hit && !!t1 && t1.id in done && done[t1.id] > 0 && !!t2open;
   if (t1Now) {
@@ -1224,7 +1240,9 @@ async function manageMt5(db, p, endNow, why = "time") {
   }
   if (!stillOpen.length) {
     const total = realized;
-    const reason = endNow ? why : legs.some((l) => l.role === "t2" && (done[l.id] ?? 0) > 0) && Math.abs(spot - p.target2) < Math.abs(spot - (patch.stop ?? p.stop)) ? "target 2" : closeReason({ ...p, stop: patch.stop ?? p.stop }, spot);
+    const lastLeg = legs.find((l) => l.role === "t2") ?? legs[legs.length - 1];
+    const exit = exits[lastLeg?.id] ?? spot;
+    const reason = endNow ? why : closeReason({ ...p, stop: patch.stop ?? p.stop }, exit);
     Object.assign(patch, { status: "closed", closed_at: (/* @__PURE__ */ new Date()).toISOString(), pnl: r2(total), last_pnl: r2(total), close_reason: reason });
     await event(db, p.plan_id, p.id, `${p.label} closed (${reason}). Result: ${sgn(total)}.`);
     await alert(db, "close", p.mode, `${acct(p.mode)}: ${p.label} closed ${sgn(total)}`, `${total >= 0 ? "Profit" : "Loss"} of ${Math.abs(r2(total))} on about ${p.stake} USD (${reason}). MT5 ${p.broker_symbol}.`, r2(total));
@@ -1483,3 +1501,9 @@ Deno.serve(async (req) => {
     return json({ error: e.message }, e instanceof UserError || e instanceof BnError ? 400 : 500);
   }
 });
+export {
+  manageBinance,
+  manageBybit,
+  manageDeriv,
+  manageMt5
+};

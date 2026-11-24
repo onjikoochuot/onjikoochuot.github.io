@@ -1,0 +1,5 @@
+{ "imports": {
+  "jsr:@supabase/functions-js/edge-runtime.d.ts": "./stubs/edge.ts",
+  "jsr:@supabase/supabase-js@2": "./stubs/supabase.ts",
+  "https://cdn.jsdelivr.net/": "./stubs/cdn/"
+} }

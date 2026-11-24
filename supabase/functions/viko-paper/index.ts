@@ -265,3 +265,6 @@ Deno.serve(async (req) => {
     return json({ error: String((e as Error).message ?? e) }, 502);
   }
 });
+
+// For the management tests.
+export { manage, closePart };

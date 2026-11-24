@@ -420,3 +420,7 @@ Deno.serve(async (req) => {
     return json({ error: String(e.message ?? e) }, 502);
   }
 });
+export {
+  closePart,
+  manage
+};
