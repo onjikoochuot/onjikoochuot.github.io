@@ -1033,6 +1033,18 @@ Deno.serve(async (req) => {
       const { data: events } = await db.from("viko_auto_events").select("*").order("at", { ascending: false }).limit(60);
       return json({ plans, positions, events, now: Date.now() });
     }
+    if (rt === "history-delete") {
+      // Deletes finished trades only (never open ones) and their activity lines.
+      const b = await req.json().catch(() => ({}));
+      const ids: string[] = Array.isArray(b.ids) ? b.ids.map(String).slice(0, 500) : [];
+      if (!b.all && !ids.length) return json({ error: "Choose which trades to delete." }, 400);
+      let sel = db.from("viko_auto_positions").select("id").eq("status", "closed");
+      if (!b.all) sel = sel.in("id", ids);
+      const { data: rows } = await sel;
+      const del = (rows ?? []).map((r: any) => r.id);
+      if (del.length) { await db.from("viko_auto_events").delete().in("position_id", del); await db.from("viko_auto_positions").delete().in("id", del); }
+      return json({ ok: true, deleted: del.length });
+    }
     if (rt === "limits") {
       if (req.method === "POST") {
         const L = readLimits(await req.json().catch(() => ({})));

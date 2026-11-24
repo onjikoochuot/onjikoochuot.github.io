@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fmt } from "../engine/analyze";
+import { HistoryBar, useSelection } from "./HistoryTools";
 import { BrokerSelect, brokerLabel, curFor } from "../lib/brokers";
 import DailyLimits from "./DailyLimits";
 import { auto, save, store, type AutoCfg, type AutoEvent, type AutoHistory, type AutoPlan, type AutoPosition, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
@@ -208,7 +209,7 @@ function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; 
   );
 }
 
-function Running({ appKey, onOpen }: { appKey: string; onOpen: (id: string, tf: string) => void }) {
+export function Running({ appKey, onOpen }: { appKey: string; onOpen: (id: string, tf: string) => void }) {
   const [st, setSt] = useState<{ plans: AutoPlan[]; positions: AutoPosition[]; events: AutoEvent[]; now: number } | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
@@ -287,13 +288,16 @@ function periodKey(iso: string, p: Period) {
   return `Week of ${m.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
-function Results({ appKey }: { appKey: string }) {
+export function Results({ appKey }: { appKey: string }) {
   const [rows, setRows] = useState<AutoHistory[] | null>(null);
+  const hs = useSelection();
   const [err, setErr] = useState("");
   const [broker, setBroker] = useState<string>("all");
   const [mode, setMode] = useState<string>("all");
   const [period, setPeriod] = useState<Period>("week");
-  useEffect(() => { auto.history(appKey).then((j) => setRows(j.rows)).catch((e) => setErr((e as Error).message)); }, [appKey]);
+  const reload = () => auto.history(appKey).then((j) => setRows(j.rows)).catch((e) => setErr((e as Error).message));
+  useEffect(() => { reload(); }, [appKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const del = async (b: { ids?: string[]; all?: boolean }) => { await auto.deleteHistory(appKey, b); hs.clear(); await reload(); };
   const list = useMemo(() => (rows ?? []).filter((r) => (broker === "all" || r.broker === broker) && (mode === "all" || r.mode === mode)), [rows, broker, mode]);
   const groups = useMemo(() => {
     const m = new Map<string, AutoHistory[]>();
@@ -308,7 +312,7 @@ function Results({ appKey }: { appKey: string }) {
   return (
     <>
       <div className="auto-filters">
-        <Choice label="Broker" value={broker} options={[["all", "All"], ["binance", "Binance"], ["deriv", "Deriv"]]} onChange={setBroker} />
+        <Choice label="Broker" value={broker} options={[["all", "All"], ["binance", "Binance"], ["bybit", "Bybit"], ["mt5", "MT5"], ["deriv", "Deriv"]]} onChange={setBroker} />
         <Choice label="Account" value={mode} options={[["all", "All"], ["demo", "Demo"], ["live", "Live"]]} onChange={setMode} />
         <Choice label="Group by" value={period} options={[["day", "Day"], ["week", "Week"], ["month", "Month"], ["year", "Year"]]} onChange={setPeriod} />
       </div>
@@ -333,13 +337,16 @@ function Results({ appKey }: { appKey: string }) {
             ))}</tbody>
           </table>
           <h3 className="pick-sec">Every finished trade</h3>
-          <table className="tbl compact">
-            <thead><tr><th>Closed</th><th>Market</th><th>Side</th><th className="r">Put in</th><th>How it ended</th><th className="r">Result</th></tr></thead>
+          <HistoryBar count={list.length} selected={[...hs.sel]} allSelected={hs.sel.size === list.length && list.length > 0} onSelectAll={(on) => hs.setAll(list.map((r) => r.id), on)} onDelete={(b) => del(b.all ? { ids: list.map((r) => r.id) } : b)} />
+          <table className="tbl compact hist-tbl">
+            <thead><tr><th aria-label="Select" /><th>Closed</th><th>Market</th><th>Side</th><th className="r">Put in</th><th>How it ended</th><th className="r">Result</th><th aria-label="Delete" /></tr></thead>
             <tbody>{list.map((r) => (
-              <tr key={r.id} style={{ cursor: "default" }}>
+              <tr key={r.id} style={{ cursor: "default" }} className={hs.has(r.id) ? "picked" : ""}>
+                <td><input type="checkbox" checked={hs.has(r.id)} onChange={() => hs.toggle(r.id)} aria-label={`Select ${r.label}`} /></td>
                 <td>{new Date(r.closed_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}<span className="sub">{r.broker} {r.mode}</span></td>
                 <td>{r.label}<span className="sub">{r.tf}</span></td><td>{r.dir === "long" ? "Buy" : "Sell"} {r.leverage}x</td>
                 <td className="r mono">{r.stake.toFixed(2)}</td><td>{r.close_reason}</td><td className={`r mono ${r.pnl >= 0 ? "pos-c" : "neg"}`}>{signed(r.pnl)}</td>
+                <td><button className="link" onClick={() => del({ ids: [r.id] })}>Delete</button></td>
               </tr>
             ))}</tbody>
           </table>

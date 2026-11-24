@@ -215,11 +215,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 500; }
   .top { gap: 12px; padding: 0 12px; }
   .top .btn.ghost { padding: 6px 10px; }
   .body { grid-template-columns: 1fr; align-content: start; }
-  .rail { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--rule); padding: 10px 12px; }
-  .rail-list { display: flex; gap: 6px; overflow-x: auto; margin-top: 10px; padding-bottom: 4px; scrollbar-width: none; }
-  .rail-group, .rail-group ul, .rail-group li { display: contents; }
-  .rail h4 { display: none; }
-  .rail li button { width: auto; flex-direction: column; gap: 0; border: 1px solid var(--rule); min-width: 96px; flex: 0 0 auto; }
   .tabs a { padding: 17px 7px 15px; font-size: 13px; }
   .main { padding: 14px 12px 40px; }
   .toolbar h1 { font-size: 24px; width: 100%; }
@@ -337,7 +332,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 500; }
   .side { order: 2; }
   .chart { height: 380px; }
   .tip-head { font-size: 20px; }
-  .rail li button .rq { display: none; }
   .positions { grid-template-columns: 1fr; }
   .pos-grid { grid-template-columns: repeat(2, 1fr); }
   .feed li { grid-template-columns: 1fr; gap: 2px; }
@@ -537,8 +531,6 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .guide-card ul { margin: 6px 0 10px; padding-left: 20px; line-height: 1.65; }
 .brokers .view-head p { max-width: 75ch; }
 @media (max-width: 760px) {
-  .rail .rail-group h4 { display: flex; flex: 0 0 auto; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; margin: 0; padding: 0 6px 0 10px; white-space: nowrap; border-left: 1px solid var(--rule); }
-  .rail .rail-group:first-child h4 { border-left: 0; padding-left: 0; }
 }
 /* Trade with real money */
 .tip-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -623,3 +615,25 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .phone-btns { justify-content: flex-start; margin-top: 0; }
 .phone-key { word-break: break-all; font-size: 13px; background: var(--hull-2); padding: 6px 8px; border-radius: 6px; }
 .setup-note { margin: 0 0 12px; }
+
+/* Phones: the market list is a left panel opened from the header */
+.rail-toggle, .rail-head, .rail-backdrop { display: none; }
+@media (max-width: 760px) {
+  .rail-toggle { display: inline-flex; align-items: center; gap: 6px; background: var(--hull-2); border: 1px solid var(--rule); color: var(--foam); border-radius: 8px; padding: 7px 10px; font: 500 14px var(--sans); cursor: pointer; }
+  .rail-toggle svg { width: 18px; height: 18px; }
+  .rail { position: fixed; top: 0; bottom: 0; left: 0; z-index: 60; width: min(86vw, 360px); max-height: none; background: var(--hull); border-right: 1px solid var(--rule); padding: 12px 12px 90px; overflow-y: auto; transform: translateX(-105%); transition: transform .22s ease; box-shadow: 8px 0 24px rgba(0,0,0,.35); }
+  .rail.open { transform: none; }
+  .rail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 16px; }
+  .rail-backdrop { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45); }
+  .rail li button { padding: 10px 8px; }
+}
+.hist-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 14px; margin: 8px 0; }
+.hist-bar .sub { flex-basis: 100%; margin: 0; }
+.hist-tbl tr.picked td { background: var(--hull-2); }
+.hist-tbl td:first-child, .hist-tbl th:first-child { width: 28px; }
+@media (max-width: 760px) {
+  .hist-tbl thead th { position: static; }
+  .tbl.hist-tbl th:nth-child(3), .tbl.hist-tbl td:nth-child(3) { display: table-cell; }
+  .tbl.hist-tbl th:nth-child(4), .tbl.hist-tbl td:nth-child(4), .tbl.hist-tbl th:nth-child(5), .tbl.hist-tbl td:nth-child(5) { display: none; }
+  .tbl.hist-tbl td, .tbl.hist-tbl th { padding: 8px 4px; font-size: 13px; }
+}

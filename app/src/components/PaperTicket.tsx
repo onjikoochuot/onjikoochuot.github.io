@@ -20,11 +20,12 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
   const many = picks.length > 1;
   const [amount, setAmount] = useState<number>(() => store("paperAmount", 100));
   const [split, setSplit] = useState<Split>(() => store("paperSplit", "each"));
+  const [closeAfter, setCloseAfter] = useState<number>(() => store("paperCloseAfter", 0));
   const [balance, setBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<string[] | null>(null);
-  useEffect(() => { save("paperAmount", amount); save("paperSplit", split); }, [amount, split]);
+  useEffect(() => { save("paperAmount", amount); save("paperSplit", split); save("paperCloseAfter", closeAfter); }, [amount, split, closeAfter]);
   useEffect(() => { if (appKey) paper.state(appKey).then((s) => setBalance(Number(s.account?.balance ?? NaN))).catch(() => {}); }, [appKey]);
 
   const per = many && split === "equal" ? amount / picks.length : amount;
@@ -41,7 +42,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
     setBusy(true); setErr("");
     const ok: string[] = [], bad: string[] = [];
     for (const p of picks) {
-      try { await paper.open(appKey, { symbol: p.symbol, label: p.label, tf: p.tf, dir: p.dir, stop: p.stop, target1: p.target1, target2: p.target2, setup: `${p.name}, ${p.tf}`, score: p.score, tip: p.tip ?? "", source: "manual", amount: Math.round(per * 100) / 100 }); ok.push(p.label); }
+      try { await paper.open(appKey, { symbol: p.symbol, label: p.label, tf: p.tf, dir: p.dir, stop: p.stop, target1: p.target1, target2: p.target2, setup: `${p.name}, ${p.tf}`, score: p.score, tip: p.tip ?? "", source: "manual", amount: Math.round(per * 100) / 100, closeAfterHours: closeAfter || undefined }); ok.push(p.label); }
       catch (e) { bad.push(`${p.label}: ${(e as Error).message}`); }
     }
     setBusy(false);
@@ -71,6 +72,10 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
                 <span className="money-in"><input className="cur" value="$" readOnly aria-label="Currency" /><input type="number" min={1} step="any" inputMode="decimal" autoFocus value={amount || ""} onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))} aria-label="Amount" /></span>
                 {balance != null && Number.isFinite(balance) && <small className="sub">Paper balance: ${balance.toFixed(2)}</small>}
               </label>
+              <div className="auto-field"><span className="auto-label">Close it</span>
+                <div className="seg wrap" role="radiogroup" aria-label="Close it">{([[0, "At target or stop"], [24, "Within 24 h"], [48, "Within 48 h"], [72, "Within 72 h"], [168, "Within a week"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={closeAfter === v} className={closeAfter === v ? "on" : ""} onClick={() => setCloseAfter(v)}>{l}</button>)}</div>
+                <small className="sub">{closeAfter ? `If a trade hasn't reached its target or stop after ${closeAfter} hours, Viko closes it at the market price so you see the result.` : "Each trade stays open until it reaches its targets or its (trailing) stop-loss."}</small>
+              </div>
               {many && (
                 <div className="auto-field"><span className="auto-label">Share the money</span>
                   <div className="seg" role="radiogroup" aria-label="Share the money">{([["each", "Same amount on each"], ["equal", "Split it equally"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={split === v} className={split === v ? "on" : ""} onClick={() => setSplit(v)}>{l}</button>)}</div>
@@ -99,7 +104,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
                   <div><span className="sub">If it runs to target 2</span><b className="pos-c mono">{usd(tot.p2)}</b></div>
                   <div><span className="sub">If the stop-loss is hit</span><b className="neg mono">{usd(-tot.loss)}</b></div>
                 </div>
-                <p className="sub">Come back around {when(tot.h0)}; {many ? "they should be" : "it should be"} done by about {when(tot.h1)}. Paper trades have no leverage: the money is the size of the position. Profits are targets, not promises.</p>
+                <p className="sub">Come back around {when(tot.h0)}; {many ? "they should be" : "it should be"} done by about {when(closeAfter ? Math.min(tot.h1, closeAfter) : tot.h1)}.{closeAfter ? ` Anything still open closes on ${when(closeAfter)}.` : ""} Paper trades have no leverage: the money is the size of the position. Profits are targets, not promises.</p>
               </>
             )}
             {tooMuch && <p className="err">That's more than your paper balance.</p>}

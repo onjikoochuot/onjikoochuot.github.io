@@ -143,7 +143,7 @@ export function save(key: string, v: unknown) {
 
 // ---------- Paper trading ----------
 export const PAPER = "https://fkrgiaeglingmogcsyik.supabase.co/functions/v1/viko-paper";
-export type PaperTrade = { id: string; symbol: string; label: string; tf: string; dir: "long" | "short"; setup: string; score: number; source: "manual" | "auto"; status: "open" | "closed"; opened_at: string; closed_at: string | null; entry: number; stop: number; initial_stop: number; target1: number; target2: number; qty: number; qty_open: number; t1_hit: boolean; realized: number; exit_price: number | null; close_reason: string | null; last_price: number | null; tip: string | null };
+export type PaperTrade = { id: string; symbol: string; label: string; tf: string; dir: "long" | "short"; setup: string; score: number; source: "manual" | "auto"; status: "open" | "closed"; opened_at: string; closed_at: string | null; entry: number; stop: number; initial_stop: number; target1: number; target2: number; qty: number; qty_open: number; t1_hit: boolean; realized: number; exit_price: number | null; close_reason: string | null; last_price: number | null; tip: string | null; close_by?: string | null };
 export type PaperAccount = { starting_balance: number; balance: number; risk_pct: number; autopilot: boolean; auto_level: "approved" | "practice"; auto_tfs: string[]; watchlist: { id: string; label: string }[]; last_tick: string | null; last_scan: string | null };
 export type PaperEvent = { id: number; at: string; kind: string; message: string };
 export type PaperState = { account: PaperAccount; open: PaperTrade[]; closed: PaperTrade[]; events: PaperEvent[]; now: number };
@@ -159,6 +159,8 @@ export const paper = {
   close: (key: string, id: string) => pfetch(key, "close", { id }),
   settings: (key: string, b: Record<string, unknown>) => pfetch(key, "settings", b),
   tick: (key: string, force = false) => pfetch(key, "tick", { force }),
+  /** Delete finished paper trades: some by id, or all of them. Open trades and the balance are untouched. */
+  deleteHistory: (key: string, b: { ids?: string[]; all?: boolean }): Promise<{ deleted: number }> => pfetch(key, "history-delete", b),
 };
 
 // ---------- News, events and opinion ----------
@@ -238,6 +240,7 @@ export const auto = {
   state: (key: string, refresh = false): Promise<{ plans: AutoPlan[]; positions: AutoPosition[]; events: AutoEvent[]; now: number }> => afetch(key, "state", undefined, refresh ? "&refresh=1" : ""),
   close: (key: string, b: { plan_id?: string; position_id?: string }) => afetch(key, "close", b),
   history: (key: string): Promise<{ rows: AutoHistory[] }> => afetch(key, "history"),
+  deleteHistory: (key: string, b: { ids?: string[]; all?: boolean }): Promise<{ deleted: number }> => afetch(key, "history-delete", b),
   connect: (key: string, broker: string, mode: string): Promise<{ ok: true; balance: number; currency: string; account?: string }> => afetch(key, "connect", undefined, `&broker=${broker}&mode=${mode}`),
   derivStatus: (key: string, mode: string): Promise<DerivStatus> => afetch(key, "deriv-status", undefined, `&mode=${mode}`),
   derivClose: (key: string, mode: string, contract_id: number) => afetch(key, "deriv-close", { mode, contract_id }),

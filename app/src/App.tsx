@@ -16,6 +16,7 @@ import Picks from "./components/Picks";
 import AutoTrade from "./components/AutoTrade";
 import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
 import RealTrade from "./components/RealTrade";
+import MyTrades from "./components/MyTrades";
 import PhoneSetup, { takeSetupKey } from "./components/PhoneSetup";
 import PaperTicket, { type PaperPick } from "./components/PaperTicket";
 import Alerts from "./components/Alerts";
@@ -26,9 +27,9 @@ import Guide from "./components/Guide";
 
 const TFS: Tf[] = ["5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"];
 const TF_LABEL: Record<Tf, string> = { "5m": "5 minutes", "15m": "15 minutes", "30m": "30 minutes", "1h": "1 hour", "2h": "2 hours", "4h": "4 hours", "1d": "Daily", "1w": "Weekly", "1M": "Monthly" };
-const VIEWS = ["analyse", "picks", "top", "auto", "paper", "brokers", "alerts", "scan", "markets", "backtest", "journal", "rules", "guide"] as const;
+const VIEWS = ["analyse", "picks", "top", "auto", "trades", "paper", "brokers", "alerts", "scan", "markets", "backtest", "journal", "rules", "guide"] as const;
 type View = typeof VIEWS[number];
-const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", top: "High performers", alerts: "Alerts", auto: "Auto-trade", brokers: "Brokers", guide: "How to use", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
+const VIEW_LABEL: Record<View, string> = { analyse: "Analyse", picks: "Today's picks", top: "High performers", trades: "My trades", alerts: "Alerts", auto: "Auto-trade", brokers: "Brokers", guide: "How to use", markets: "Markets", paper: "Paper trading", scan: "Scan", backtest: "Backtest", journal: "Journal", rules: "How it decides" };
 const viewFromHash = (): View => { const raw = location.hash.slice(1); const h = (raw === "binance" ? "brokers" : raw) as View; return VIEWS.includes(h) ? h : "analyse"; };
 
 const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -36,6 +37,7 @@ const ICONS: Partial<Record<View | "more", string>> = {
   analyse: "M3 17l5-6 4 4 7-9M3 21h18",
   picks: "M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z",
   auto: "M13 2L4 14h7l-1 8 9-12h-7z",
+  trades: "M4 8h16v11H4zM9 8V5h6v3M4 13h16",
   markets: "M4 6h16M4 12h16M4 18h10",
   paper: "M5 4h10l4 4v12H5zM14 4v5h5M8 13h8M8 17h5",
   scan: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5",
@@ -170,7 +172,8 @@ export default function App() {
   const newsCtx = news ? { events: news.events, stance: news.opinion.stance, moodLabel: news.moodLabel } : undefined;
   const tip = useMemo(() => (analysis ? makeTip(setup, inst.label, tf, Math.floor(Date.now() / 1000), account, riskPct, newsCtx) : null), [analysis, setup, inst.label, tf, account, riskPct, news]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (v: View) => { location.hash = v; setView(v); setMoreOpen(false); window.scrollTo({ top: 0 }); };
-  const open = (i: Instrument) => { setInst(i); go("analyse"); };
+  const [railOpen, setRailOpen] = useState(false);
+  const open = (i: Instrument) => { setInst(i); go("analyse"); setRailOpen(false); };
   const openById = (id: string) => { const i = [...list, ...CATALOG].find((x) => x.id === id); if (i) open(i); };
   const toggle = (i: Instrument) => setList((l) => (l.some((x) => x.id === i.id) ? l.filter((x) => x.id !== i.id) : [...l, i]));
   const [expanded, setExpanded] = useState<string[]>(() => store("railOpen", []));
@@ -216,6 +219,7 @@ export default function App() {
         </div>
       )}
       <header className="top">
+        <button className="rail-toggle" onClick={() => setRailOpen(true)} aria-expanded={railOpen} aria-controls="markets-panel"><Icon d="M4 6h16M4 12h16M4 18h16" /><span>Markets</span></button>
         <a className="brand" href="#analyse" onClick={() => go("analyse")} aria-label="Viko home">
           <svg viewBox="0 0 40 20" aria-hidden="true"><path d="M1 15 L8 5 L13 11 L22 2 L27 9 L32 6 L39 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>
           <span>Viko</span>
@@ -230,7 +234,9 @@ export default function App() {
       </header>
 
       <div className="body">
-        <aside className="rail" aria-label="Watchlist">
+        {railOpen && <div className="rail-backdrop" onClick={() => setRailOpen(false)} aria-hidden="true" />}
+        <aside id="markets-panel" className={`rail ${railOpen ? "open" : ""}`} aria-label="Markets">
+          <div className="rail-head"><b>Markets</b><button className="link" onClick={() => setRailOpen(false)}>Close</button></div>
           <SymbolSearch onPick={(i) => { if (!list.some((x) => x.id === i.id)) setList([...list, i]); open(i); }} />
           <div className="rail-list">
             {MARKETS.map((m) => {
@@ -297,6 +303,7 @@ export default function App() {
           {view === "auto" && <AutoTrade appKey={jkey} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t as Tf); openById(id); }} />}
           {view === "brokers" && <Brokers appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "guide" && <Guide go={go} />}
+          {view === "trades" && <MyTrades appKey={jkey} onNeedKey={() => setSettingsOpen(true)} onOpen={(id, t) => { setTf(t as Tf); openById(id); }} go={go} />}
           {view === "alerts" && <Alerts appKey={jkey} onNeedKey={() => setSettingsOpen(true)} />}
           {view === "markets" && <Markets list={list} onOpen={open} onToggle={toggle} />}
           {view === "paper" && <Paper appKey={jkey} onNeedKey={() => setSettingsOpen(true)} watchlist={list.map((x) => ({ id: x.id, label: x.label }))} onOpenMarket={openById} />}
@@ -309,18 +316,18 @@ export default function App() {
       </div>
 
       <nav className="bottom-nav" aria-label="Main">
-        {(["analyse", "picks", "auto", "paper"] as const).map((v) => (
+        {(["analyse", "picks", "trades", "paper"] as const).map((v) => (
           <a key={v} href={`#${v}`} className={view === v ? "on" : ""} aria-current={view === v ? "page" : undefined} onClick={() => go(v)}>
-            <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : v === "picks" ? "Picks" : v === "auto" ? "Auto" : VIEW_LABEL[v]}</span>
+            <Icon d={ICONS[v]!} /><span>{v === "paper" ? "Paper" : v === "picks" ? "Picks" : v === "trades" ? "My trades" : VIEW_LABEL[v]}</span>
           </a>
         ))}
-        <button className={["top", "alerts", "guide", "brokers", "markets", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
+        <button className={["auto", "top", "alerts", "guide", "brokers", "markets", "scan", "backtest", "journal", "rules"].includes(view) ? "on" : ""} onClick={() => setMoreOpen(true)} aria-haspopup="dialog"><Icon d={ICONS.more!} /><span>More</span></button>
       </nav>
 
       {moreOpen && (
         <div className="modal sheet-modal" role="dialog" aria-modal="true" aria-label="More" onClick={() => setMoreOpen(false)}>
           <div className="sheet bottom" onClick={(e) => e.stopPropagation()}>
-            {(["top", "alerts", "brokers", "guide", "scan", "markets", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
+            {(["auto", "top", "alerts", "brokers", "guide", "scan", "markets", "backtest", "journal", "rules"] as const).map((v) => <button key={v} className="sheet-item" onClick={() => go(v)}>{VIEW_LABEL[v]}</button>)}
             <button className="sheet-item" onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}>Settings</button>
           </div>
         </div>

@@ -87,6 +87,7 @@ async function openTrade(db: DB, acc: any, b: any, livePrice: number) {
     setup: String(b.setup ?? "").slice(0, 120), score: Number(b.score ?? 0), source: b.source === "auto" ? "auto" : "manual",
     entry, stop, initial_stop: stop, target1: t1, target2: long ? Math.max(t1, t2) : Math.min(t1, t2), qty, qty_open: qty,
     last_price: entry, last_checked: Math.floor(Date.now() / 1000), tip: String(b.tip ?? "").slice(0, 1500), payload: b.payload ?? null,
+    close_by: Number(b.closeAfterHours) > 0 ? new Date(Date.now() + Math.min(24 * 60, Number(b.closeAfterHours)) * 3600000).toISOString() : null,
   };
   const { data, error } = await db.from("viko_paper_trades").insert(row).select().single();
   if (error) throw error;
@@ -107,8 +108,8 @@ async function closePart(db: DB, t: any, price: number, part: number, reason: st
   await db.from("viko_paper_account").update({ balance: Number(acc!.balance) + pnl }).eq("id", "main");
   Object.assign(t, patch);
   if (reason === "target1") await alert(db, "t1", `Paper ${t.label}: target 1 hit`, `Half closed at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}). Stop moved to entry.`, pnl);
-  if (done) await alert(db, "close", `Paper ${t.label} closed: ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)}`, `Closed at ${fmt(price)} (${reason === "manual" ? "by you" : reason}). Total result ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)} paper dollars.`, Number(patch.realized));
-  await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "trailing" ? "trailing stop hit, profit locked in" : reason === "stop" ? (t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed") : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
+  if (done) await alert(db, "close", `Paper ${t.label} closed: ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)}`, `Closed at ${fmt(price)} (${reason === "manual" ? "by you" : reason === "time" ? "time limit" : reason}). Total result ${Number(patch.realized) >= 0 ? "+" : ""}${Number(patch.realized).toFixed(2)} paper dollars.`, Number(patch.realized));
+  await log(db, t.id, reason, `${t.label}: ${reason === "target1" ? "first target hit, half closed, stop moved to entry" : reason === "target2" ? "second target hit, trade closed" : reason === "trailing" ? "trailing stop hit, profit locked in" : reason === "stop" ? (t.t1_hit ? "stopped out at entry (no loss on the rest)" : "stop-loss hit, trade closed") : reason === "time" ? "time limit reached, closed at the market price" : "closed by you"} at ${fmt(price)} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}).`);
 }
 
 /** Walk the hourly bars since the last check and apply stop / targets in a conservative order. */
@@ -126,7 +127,7 @@ async function manage(db: DB, open: any[]) {
         if (!t.t1_hit && (long ? k.h >= t.target1 : k.l <= t.target1)) {
           await closePart(db, t, t.target1, t.qty / 2, "target1");
           t.t1_hit = true; t.stop = long ? Math.max(t.stop, t.entry) : Math.min(t.stop, t.entry);
-          await db.from("viko_paper_trades").update({ t1_hit: true, stop: t.entry }).eq("id", t.id);
+          await db.from("viko_paper_trades").update({ t1_hit: true, stop: t.stop }).eq("id", t.id);
         }
         if (t.t1_hit && t.status === "open" && (long ? k.h >= t.target2 : k.l <= t.target2)) { await closePart(db, t, t.target2, t.qty_open, "target2"); break; }
         // Trail the stop with this hour's best price, exactly like the real-money managers.
@@ -137,6 +138,11 @@ async function manage(db: DB, open: any[]) {
       }
       const series = bySym.get(t.symbol)!;
       if (t.status === "open" && series.length) await db.from("viko_paper_trades").update({ last_price: series[series.length - 1].c, last_checked: series[series.length - 1].t }).eq("id", t.id);
+      // Time limit you chose when opening: close at the latest price.
+      if (t.status === "open" && t.close_by && Date.now() >= Date.parse(t.close_by)) {
+        const q = await quotes([t.symbol]).catch(() => ({} as Record<string, { price: number }>));
+        await closePart(db, t, q[t.symbol]?.price ?? (series.length ? series[series.length - 1].c : t.last_price ?? t.entry), t.qty_open, "time");
+      }
     } catch (e) { await log(db, t.id, "error", `${t.label}: could not check prices (${(e as Error).message}).`); }
   }
 }
@@ -206,6 +212,16 @@ Deno.serve(async (req) => {
       const price = q[b.symbol]?.price;
       if (!price) return json({ error: "Couldn't get a live price for this market." }, 502);
       return json({ trade: await openTrade(db, acc, b, price) });
+    }
+    if (route === "history-delete") {
+      // Deletes finished trades only (never open ones). The balance is not changed.
+      const ids: string[] = Array.isArray(b.ids) ? b.ids.map(String).slice(0, 500) : [];
+      if (!b.all && !ids.length) return json({ error: "Choose which trades to delete." }, 400);
+      let q = db.from("viko_paper_trades").delete({ count: "exact" }).eq("status", "closed");
+      if (!b.all) q = q.in("id", ids);
+      const { count, error } = await q;
+      if (error) return json({ error: error.message }, 500);
+      return json({ ok: true, deleted: count ?? 0 });
     }
     if (route === "close") {
       const { data: t } = await db.from("viko_paper_trades").select("*").eq("id", b.id).single();

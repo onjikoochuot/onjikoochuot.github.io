@@ -1,3 +1,4 @@
+import { HistoryBar, useSelection } from "./HistoryTools";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmt } from "../engine/analyze";
 import { paper, type PaperState, type PaperTrade } from "../lib/api";
@@ -12,6 +13,7 @@ function unrealized(t: PaperTrade, price: number) {
 
 export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { appKey: string; onNeedKey: () => void; watchlist: { id: string; label: string }[]; onOpenMarket: (id: string) => void }) {
   const [st, setSt] = useState<PaperState | null>(null);
+  const hs = useSelection();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
   const [tab, setTab] = useState<"open" | "history" | "activity">("open");
@@ -129,7 +131,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
                 <div><dt>Stop{t.t1_hit ? " (moved)" : ""}</dt><dd className="bear">{fmt(t.stop)}</dd></div>
                 <div><dt>{t.t1_hit ? "Target 2" : "Target 1"}</dt><dd className="bull">{fmt(t.t1_hit ? t.target2 : t.target1)}</dd></div>
               </dl>
-              <p className="pos-meta">{t.setup} on {t.tf}, opened {new Date(t.opened_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}{t.t1_hit ? ". Half already banked at target 1." : "."}</p>
+              <p className="pos-meta">{t.setup} on {t.tf}, opened {new Date(t.opened_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}{t.t1_hit ? ". Half already banked at target 1." : "."}{t.close_by ? ` Closes by ${new Date(t.close_by).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })} at the latest.` : ""}</p>
               {t.tip && <details className="pos-tip"><summary>The tip behind this trade</summary><p>{t.tip}</p></details>}
               <button className="btn ghost" onClick={() => close(t.id)} disabled={busy === t.id}>{busy === t.id ? "Closing…" : "Close at market price"}</button>
             </li>
@@ -138,14 +140,18 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
 
       {tab === "history" && (closed.length === 0
         ? <p className="ctx-note empty-line">Closed trades will show here with their result.</p>
-        : <table className="tbl compact">
-          <thead><tr><th>Closed</th><th>Market</th><th>Side</th><th className="r">Entry → exit</th><th>Why</th><th className="r">Result</th></tr></thead>
+        : <>
+        <HistoryBar count={closed.length} selected={[...hs.sel]} allSelected={hs.sel.size === closed.length} onSelectAll={(on) => hs.setAll(closed.map((t) => t.id), on)}
+          onDelete={async (b) => { await paper.deleteHistory(appKey, b); hs.clear(); await load(); }} />
+        <table className="tbl compact hist-tbl">
+          <thead><tr><th aria-label="Select" /><th>Closed</th><th>Market</th><th>Side</th><th className="r">Entry → exit</th><th>Why</th><th className="r">Result</th><th aria-label="Delete" /></tr></thead>
           <tbody>{closed.map((t) => (
-            <tr key={t.id}><td className="mono">{t.closed_at?.slice(5, 16).replace("T", " ")}</td><td><b>{t.label}</b><span className="sub">{t.tf}{t.source === "auto" ? ", autopilot" : ""}</span></td><td>{t.dir === "long" ? "Buy" : "Sell"}</td>
-              <td className="r mono">{fmt(t.entry)} → {fmt(t.exit_price ?? 0)}</td><td>{t.close_reason === "target2" ? "Target 2" : t.close_reason === "stop" ? (t.t1_hit ? "Stop at entry" : "Stop-loss") : t.close_reason === "manual" ? "You closed it" : t.close_reason}</td>
-              <td className={`r mono ${Number(t.realized) >= 0 ? "bull" : "bear"}`}>{money(Number(t.realized))}</td></tr>
+            <tr key={t.id} className={hs.has(t.id) ? "picked" : ""}><td><input type="checkbox" checked={hs.has(t.id)} onChange={() => hs.toggle(t.id)} aria-label={`Select ${t.label}`} /></td><td className="mono">{t.closed_at?.slice(5, 16).replace("T", " ")}</td><td><b>{t.label}</b><span className="sub">{t.tf}{t.source === "auto" ? ", autopilot" : ""}</span></td><td>{t.dir === "long" ? "Buy" : "Sell"}</td>
+              <td className="r mono">{fmt(t.entry)} → {fmt(t.exit_price ?? 0)}</td><td>{t.close_reason === "target2" ? "Target 2" : t.close_reason === "stop" ? (t.t1_hit ? "Stop at entry" : "Stop-loss") : t.close_reason === "manual" ? "You closed it" : t.close_reason === "time" ? "Time limit" : t.close_reason === "trailing" ? "Trailing stop (profit locked)" : t.close_reason}</td>
+              <td className={`r mono ${Number(t.realized) >= 0 ? "bull" : "bear"}`}>{money(Number(t.realized))}</td>
+              <td><button className="link" onClick={async () => { await paper.deleteHistory(appKey, { ids: [t.id] }); await load(); }}>Delete</button></td></tr>
           ))}</tbody>
-        </table>)}
+        </table></>)}
 
       {tab === "activity" && <ul className="feed">{st.events.map((e) => <li key={e.id}><span className="mono">{new Date(e.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>{e.message}</li>)}</ul>}
 
