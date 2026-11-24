@@ -35,6 +35,23 @@ var nextPeak = (dir, peak, ...prices) => {
   return all.length ? dir === "long" ? Math.max(...all) : Math.min(...all) : NaN;
 };
 
+// supabase/functions/viko-paper/costs.ts
+var MAJORS = /* @__PURE__ */ new Set(["BTC", "ETH", "BNB", "SOL", "XRP"]);
+function costsFor(symbol) {
+  const [src, raw = ""] = symbol.split(":");
+  const s = raw.toUpperCase();
+  if (src === "crypto") {
+    const base = s.replace(/(USDT|USDC|FDUSD|BUSD)$/, "");
+    return MAJORS.has(base) ? { fee: 5e-4, slip: 2e-4, label: "major coin: 0.05% fee + 0.02% slippage per side" } : { fee: 5e-4, slip: 8e-4, label: "smaller coin: 0.05% fee + 0.08% slippage per side" };
+  }
+  if (s.endsWith("=X")) return { fee: 1e-4, slip: 1e-4, label: "currency pair: 0.01% spread + 0.01% slippage per side" };
+  if (s.endsWith("=F")) return { fee: 2e-4, slip: 2e-4, label: "commodity: 0.02% spread + 0.02% slippage per side" };
+  return { fee: 5e-4, slip: 3e-4, label: "stock or index: 0.05% spread + 0.03% slippage per side" };
+}
+function marketFill(price, side, c) {
+  return side === "buy" ? price * (1 + c.slip) : price * (1 - c.slip);
+}
+
 // supabase/functions/viko-paper/market.ts
 var UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 async function binance(sym, tf) {
@@ -207,7 +224,8 @@ async function alert(db, kind, title, body, pnl = null) {
 var fmt = (x) => Math.abs(x) >= 1e3 ? x.toFixed(2) : Math.abs(x) >= 1 ? x.toFixed(4) : x.toFixed(6);
 async function openTrade(db, acc, b, livePrice) {
   const long = b.dir === "long";
-  const entry = livePrice;
+  const cost = costsFor(String(b.symbol));
+  const entry = marketFill(livePrice, long ? "buy" : "sell", cost);
   const stop = Number(b.stop), t1 = Number(b.target1), t2 = Number(b.target2 ?? b.target1);
   if (!(long ? stop < entry && t1 > entry : stop > entry && t1 < entry)) throw new Error(`Price has moved: at ${fmt(entry)} the stop or target is on the wrong side. Re-analyse first.`);
   const amount = Number(b.amount);
@@ -215,6 +233,7 @@ async function openTrade(db, acc, b, livePrice) {
   if (amount > Number(acc.balance)) throw new Error(`That's more than your paper balance (${Number(acc.balance).toFixed(2)}).`);
   const riskMoney = Number(acc.balance) * Number(acc.risk_pct) / 100;
   const qty = amount > 0 ? amount / entry : riskMoney / Math.abs(entry - stop);
+  const entryFee = qty * entry * cost.fee;
   const row = {
     symbol: String(b.symbol).slice(0, 40),
     label: String(b.label ?? b.symbol).slice(0, 40),
@@ -227,6 +246,8 @@ async function openTrade(db, acc, b, livePrice) {
     stop,
     initial_stop: stop,
     target1: t1,
+    fees: entryFee,
+    realized: -entryFee,
     target2: long ? Math.max(t1, t2) : Math.min(t1, t2),
     qty,
     qty_open: qty,
@@ -238,16 +259,20 @@ async function openTrade(db, acc, b, livePrice) {
   };
   const { data, error } = await db.from("viko_paper_trades").insert(row).select().single();
   if (error) throw error;
-  await log(db, data.id, "open", `${row.source === "auto" ? "Autopilot opened" : "Opened"} ${row.dir} ${row.label} at ${fmt(entry)}, stop ${fmt(stop)}, target ${fmt(t1)}.`);
+  await db.from("viko_paper_account").update({ balance: Number(acc.balance) - entryFee }).eq("id", "main");
+  await log(db, data.id, "open", `${row.source === "auto" ? "Autopilot opened" : "Opened"} ${row.dir} ${row.label} at ${fmt(entry)} (quote ${fmt(livePrice)}, fee ${entryFee.toFixed(2)}), stop ${fmt(stop)}, target ${fmt(t1)}.`);
   await alert(db, "open", `Paper ${long ? "buy" : "sell"}: ${row.label}`, `Opened at ${fmt(entry)} (${row.tf}). Stop ${fmt(stop)}, target ${fmt(t1)}.`);
   return data;
 }
-async function closePart(db, t, price, part, reason) {
+async function closePart(db, t, level, part, reason) {
   const long = t.dir === "long";
-  const pnl = (long ? price - t.entry : t.entry - price) * part;
+  const cost = costsFor(String(t.symbol));
+  const price = reason === "target1" || reason === "target2" ? level : marketFill(level, long ? "sell" : "buy", cost);
+  const fee = part * price * cost.fee;
+  const pnl = (long ? price - t.entry : t.entry - price) * part - fee;
   const qtyOpen = Math.max(0, t.qty_open - part);
   const done = qtyOpen <= t.qty * 1e-9;
-  const patch = { qty_open: done ? 0 : qtyOpen, realized: Number(t.realized) + pnl, last_price: price };
+  const patch = { qty_open: done ? 0 : qtyOpen, realized: Number(t.realized) + pnl, last_price: price, fees: Number(t.fees ?? 0) + fee };
   if (done) Object.assign(patch, { status: "closed", exit_price: price, closed_at: (/* @__PURE__ */ new Date()).toISOString(), close_reason: reason });
   await db.from("viko_paper_trades").update(patch).eq("id", t.id);
   const { data: acc } = await db.from("viko_paper_account").select("balance").eq("id", "main").single();
@@ -352,13 +377,18 @@ Deno.serve(async (req) => {
     if (route === "state") {
       const [{ data: open }, { data: closed }, { data: events }] = await Promise.all([
         db.from("viko_paper_trades").select("*").eq("status", "open").order("opened_at", { ascending: false }),
-        db.from("viko_paper_trades").select("*").eq("status", "closed").order("closed_at", { ascending: false }).limit(100),
+        db.from("viko_paper_trades").select("*").eq("status", "closed").eq("hidden", false).order("closed_at", { ascending: false }).limit(100),
         db.from("viko_paper_events").select("*").order("at", { ascending: false }).limit(40)
       ]);
       const syms = (open ?? []).map((t) => String(t.symbol));
       const q = await quotes([...new Set(syms)]);
       for (const t of open ?? []) if (q[t.symbol]) t.last_price = q[t.symbol].price;
       return json({ account: acc, open, closed, events, now: Date.now() });
+    }
+    if (route === "report") {
+      const { data, error } = await db.from("viko_paper_trades").select("id,symbol,label,tf,dir,setup,score,source,opened_at,closed_at,entry,initial_stop,target1,qty,realized,fees,close_reason").eq("status", "closed").order("closed_at", { ascending: false }).limit(5e3);
+      if (error) return json({ error: error.message }, 500);
+      return json({ trades: data, since: acc.created_at });
     }
     if (req.method !== "POST") return json({ error: "use POST" }, 405);
     const b = await req.json().catch(() => ({}));
@@ -373,7 +403,7 @@ Deno.serve(async (req) => {
     if (route === "history-delete") {
       const ids = Array.isArray(b.ids) ? b.ids.map(String).slice(0, 500) : [];
       if (!b.all && !ids.length) return json({ error: "Choose which trades to delete." }, 400);
-      let q = db.from("viko_paper_trades").delete({ count: "exact" }).eq("status", "closed");
+      let q = db.from("viko_paper_trades").update({ hidden: true }, { count: "exact" }).eq("status", "closed").eq("hidden", false);
       if (!b.all) q = q.in("id", ids);
       const { count, error } = await q;
       if (error) return json({ error: error.message }, 500);

@@ -6,6 +6,7 @@ node scripts/gen-universe.mjs
 for f in viko-market viko-paper viko-picks; do cp supabase/functions/_shared/market.ts supabase/functions/$f/market.ts; done
 cp supabase/functions/_shared/universe.ts supabase/functions/viko-picks/universe.ts
 for f in viko-auto viko-paper; do cp app/src/engine/trail.ts supabase/functions/$f/trail.ts; done
+cp app/src/engine/costs.ts supabase/functions/viko-paper/costs.ts
 cat > /tmp/engine-entry.ts <<'TS'
 export { analyze } from "./app/src/engine/analyze";
 export { makeTip } from "./app/src/engine/layman";

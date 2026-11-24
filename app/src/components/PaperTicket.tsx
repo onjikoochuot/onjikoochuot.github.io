@@ -1,3 +1,4 @@
+import { costsFor, roundTripPct } from "../engine/costs";
 import { useEffect, useState } from "react";
 import { fmt } from "../engine/analyze";
 import { TF_HOURS } from "../engine/layman";
@@ -32,9 +33,11 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
   const rows = picks.map((p) => {
     const move = (to: number) => Math.abs(to - p.entry) / p.entry;
     const h = (p.expectBars ?? 3) * (TF_HOURS[p.tf as Tf] ?? 1);
-    return { p, loss: per * move(p.stop), p1: (per / 2) * move(p.target1), p2: (per / 2) * move(p.target1) + (per / 2) * move(p.target2), h0: h * 0.6, h1: h * 1.6 };
+    // Estimated fees and slippage (see Track record): a target exit is a limit order, a stop-loss exit is a market order.
+    const c = costsFor(p.symbol), costWin = per * roundTripPct(c, false), costLoss = per * roundTripPct(c, true);
+    return { p, cost: costLoss, loss: per * move(p.stop) + costLoss, p1: (per / 2) * move(p.target1) - costWin, p2: (per / 2) * move(p.target1) + (per / 2) * move(p.target2) - costWin, h0: h * 0.6, h1: h * 1.6 };
   });
-  const tot = rows.reduce((a, r) => ({ money: a.money + per, loss: a.loss + r.loss, p1: a.p1 + r.p1, p2: a.p2 + r.p2, h0: Math.max(a.h0, r.h0), h1: Math.max(a.h1, r.h1) }), { money: 0, loss: 0, p1: 0, p2: 0, h0: 0, h1: 0 });
+  const tot = rows.reduce((a, r) => ({ money: a.money + per, cost: a.cost + r.cost, loss: a.loss + r.loss, p1: a.p1 + r.p1, p2: a.p2 + r.p2, h0: Math.max(a.h0, r.h0), h1: Math.max(a.h1, r.h1) }), { money: 0, cost: 0, loss: 0, p1: 0, p2: 0, h0: 0, h1: 0 });
   const tooMuch = balance != null && Number.isFinite(balance) && tot.money > balance;
 
   const go = async () => {
@@ -104,6 +107,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
                   <div><span className="sub">If it runs to target 2</span><b className="pos-c mono">{usd(tot.p2)}</b></div>
                   <div><span className="sub">If the stop-loss is hit</span><b className="neg mono">{usd(-tot.loss)}</b></div>
                 </div>
+                <p className="sub">These figures are after estimated fees and slippage of up to ${tot.cost.toFixed(2)}, like a real broker would charge.</p>
                 <p className="sub">Come back around {when(tot.h0)}; {many ? "they should be" : "it should be"} done by about {when(closeAfter ? Math.min(tot.h1, closeAfter) : tot.h1)}.{closeAfter ? ` Anything still open closes on ${when(closeAfter)}.` : ""} Paper trades have no leverage: the money is the size of the position. Profits are targets, not promises.</p>
               </>
             )}

@@ -202,7 +202,10 @@ Deno.test("Paper: stop trails on 15-minute candles, half closes at target 1, the
   assert(closes.includes("target1"), "half closed at target 1");
   assert(closes.includes("trailing"), "rest closed by the trailing stop");
   assertEquals(t.status, "closed");
-  assertAlmostEquals(Number(t.realized), 2.5 * 10 + 2.5 * 10, 1e-9); // half at 110 (+25) and half at the 110 stop (+25)
+  // Half at the 110 target (limit, no slippage) and half at the 110 stop (market order: 0.08% slippage), each minus the 0.05% fee.
+  const stopFill = 110 * (1 - 0.0008);
+  assertAlmostEquals(Number(t.realized), 2.5 * 10 - 2.5 * 110 * 0.0005 + 2.5 * (stopFill - 100) - 2.5 * stopFill * 0.0005, 1e-9);
+  assert(Number(t.fees) > 0, "fees recorded");
 });
 
 Deno.test("Shorts mirror exactly (Binance)", async () => {

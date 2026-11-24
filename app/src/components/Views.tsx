@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Candle, Tf } from "../engine/types";
 import { fmt } from "../engine/analyze";
 import { backtest, type BacktestResult } from "../engine/backtest";
+import { costsFor, roundTripPct } from "../engine/costs";
 import { getCandles, journal, type JournalRow } from "../lib/api";
 
 export function Backtest({ symbol, label, tf }: { symbol: string; label: string; tf: Tf }) {
@@ -22,6 +23,10 @@ export function Backtest({ symbol, label, tf }: { symbol: string; label: string;
     setBusy(false);
   };
   const closed = res ? res.wins + res.losses : 0;
+  // Average result after estimated fees and slippage, in units of risk.
+  const cst = costsFor(symbol);
+  const fin = res ? res.trades.filter((t) => t.result !== "open") : [];
+  const netR = fin.length ? fin.reduce((a, t) => a + t.r - (roundTripPct(cst, t.result !== "win") * t.entry) / Math.abs(t.entry - t.stop), 0) / fin.length : null;
   return (
     <section className="view">
       <header className="view-head">
@@ -39,7 +44,7 @@ export function Backtest({ symbol, label, tf }: { symbol: string; label: string;
           <div className="stats">
             <div><span className="mono big">{res.winRate === null ? "–" : `${Math.round(res.winRate * 100)}%`}</span><span>hit target 1 first</span></div>
             <div><span className="mono big">{closed}</span><span>closed trades</span></div>
-            <div><span className="mono big">{res.avgR === null ? "–" : `${res.avgR >= 0 ? "+" : ""}${res.avgR.toFixed(2)}R`}</span><span>average result per trade</span></div>
+            <div><span className="mono big">{res.avgR === null ? "–" : `${res.avgR >= 0 ? "+" : ""}${res.avgR.toFixed(2)}R`}</span><span>average result per trade{netR !== null ? `; ${netR >= 0 ? "+" : ""}${netR.toFixed(2)}R after costs` : ""}</span></div>
             <div><span className="mono big">{res.barsTested}</span><span>candles replayed</span></div>
           </div>
           <p className="ctx-note">{closed < 30 ? `Only ${closed} closed trades: too few to trust the percentage. Try "Approved and watch", a lower timeframe, or other markets.` : "A sample of 30 or more trades starts to mean something. Past results don't guarantee future ones."}</p>
