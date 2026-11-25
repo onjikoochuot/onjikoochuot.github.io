@@ -37,11 +37,13 @@
 - [x] ATR chandelier trail — dropped
 - [x] Wider universe check — passed (edge holds on 48 new markets)
 - [ ] Liquidity filter for crypto (top-20 by dollar volume)
-- [ ] Volatility-scaled position size (sizing, not entry)
+- [x] Volatility-scaled position size — dropped (per-risk result +0.238 → +0.246 at best, drawdowns no better; risk-based sizing already used)
 - [ ] Wave-3 entry after higher low + break of last lower high (new entry type: engine work)
 - [ ] Skip entries in a sideways wave 4 after a sharp wave 2 (alternation)
 - [ ] Wave-5 RSI/EWO divergence reversal (new setup type)
 - [ ] Fibonacci cluster (2+ projections within 0.5 ATR) as target/entry filter
 - [ ] Count-stability filter (skip if the count changed in the last N bars)
-- [ ] Weekly timeframe edge test
+- [x] Weekly timeframe — dropped (only 62 setups in 30 markets with enough weekly history; the edge rule averaged −0.11R, recent −0.31R; no edge, too few trades)
 - [ ] Funding-rate caution for crypto longs (needs funding data)
+
+_Note: the lab-data branch holds only the latest run (the Nov 25 evening run was weekly-only). Re-run the full lab before comparing._
