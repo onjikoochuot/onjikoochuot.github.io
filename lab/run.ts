@@ -20,11 +20,12 @@ const GROUPS: Record<string, string[]> = {
   alts2: ["crypto:TRXUSDT", "crypto:BCHUSDT", "crypto:XLMUSDT", "crypto:UNIUSDT", "crypto:AAVEUSDT", "crypto:FILUSDT", "crypto:ETCUSDT", "crypto:HBARUSDT", "crypto:ICPUSDT", "crypto:APTUSDT"],
   world: ["yahoo:^RUT", "yahoo:^STOXX50E", "yahoo:^HSI", "yahoo:^NSEI", "yahoo:PA=F", "yahoo:PL=F", "yahoo:ZC=F", "yahoo:ZW=F", "yahoo:KC=F", "yahoo:BZ=F"],
 };
-const GROUP_TFS: Record<string, Tf[]> = { stocks2: ["1d"], alts2: ["1d"], world: ["1d"] };
+GROUPS.weekly = Object.entries(GROUPS).filter(([g]) => g !== "fx").flatMap(([, v]) => v); // every non-forex market, weekly chart
+const GROUP_TFS: Record<string, Tf[]> = { stocks2: ["1d"], alts2: ["1d"], world: ["1d"], weekly: ["1w"] };
 const TFS_DEFAULT: Tf[] = (process.env.LAB_TFS?.split(",") as Tf[]) ?? ["15m", "1h", "4h", "1d"];
-const TF_SEC: Record<string, number> = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
+const TF_SEC: Record<string, number> = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
 const WINDOW = 900; // candles the engine sees each time (the live app loads about this many)
-const MAX_HOLD: Record<string, number> = { "15m": 288, "1h": 168, "4h": 90, "1d": 60 }; // bars: 3d, 7d, 15d, 60d
+const MAX_HOLD: Record<string, number> = { "15m": 288, "1h": 168, "4h": 90, "1d": 60, "1w": 26 }; // bars: 3d, 7d, 15d, 60d
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function getJson(url: string): Promise<any> {
@@ -49,8 +50,8 @@ async function binance(sym: string, tf: Tf, want: number): Promise<Candle[]> {
 }
 
 async function yahoo(sym: string, tf: Tf): Promise<Candle[]> {
-  const iv = tf === "1d" ? "1d" : tf === "15m" ? "15m" : "60m";
-  const range = tf === "1d" ? "15y" : tf === "15m" ? "60d" : "730d";
+  const iv = tf === "1w" ? "1wk" : tf === "1d" ? "1d" : tf === "15m" ? "15m" : "60m";
+  const range = tf === "1w" ? "max" : tf === "1d" ? "15y" : tf === "15m" ? "60d" : "730d";
   const j = await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=${iv}&range=${range}`);
   const r = j.chart?.result?.[0]; if (!r) return [];
   const q = r.indicators.quote[0];
@@ -136,9 +137,9 @@ async function main() {
     const t0 = Date.now();
     let c: Candle[] = [];
     try { c = sym.startsWith("crypto:") ? await binance(sym.slice(7), tf, tf === "1d" ? 3000 : 4000) : await yahoo(sym.slice(6), tf); } catch (e) { console.log(`${sym} ${tf}: ${(e as Error).message}`); continue; }
-    if (c.length < 400) { console.log(`${sym} ${tf}: only ${c.length} candles, skipped`); continue; }
+    if (c.length < (tf === "1w" ? 260 : 400)) { console.log(`${sym} ${tf}: only ${c.length} candles, skipped`); continue; }
     let busyUntil = -1, n = 0;
-    for (let i = 300; i < c.length - 2; i++) {
+    for (let i = tf === "1w" ? 220 : 300; i < c.length - 2; i++) {
       if (i <= busyUntil) continue;
       const win = c.slice(Math.max(0, i + 1 - WINDOW), i + 1);
       const a = analyze(win, tf, undefined, sym);
