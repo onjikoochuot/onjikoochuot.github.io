@@ -36,14 +36,16 @@
 - [x] ATR percentile / volatility regime gates — dropped
 - [x] ATR chandelier trail — dropped
 - [x] Wider universe check — passed (edge holds on 48 new markets)
-- [ ] Liquidity filter for crypto (top-20 by dollar volume)
+- [x] Crypto liquidity / small caps — crypto DROPPED from the edge entirely (Nov 25 evening run, 93 markets): small caps −0.23R; other crypto +0.14R but test −0.14R; dollar volume didn't rescue it. Non-crypto: n=997, +0.257R, test +0.330R, 37/47 markets positive.
 - [x] Volatility-scaled position size — dropped (per-risk result +0.238 → +0.246 at best, drawdowns no better; risk-based sizing already used)
 - [ ] Wave-3 entry after higher low + break of last lower high (new entry type: engine work)
 - [ ] Skip entries in a sideways wave 4 after a sharp wave 2 (alternation)
 - [ ] Wave-5 RSI/EWO divergence reversal (new setup type)
 - [ ] Fibonacci cluster (2+ projections within 0.5 ATR) as target/entry filter
-- [ ] Count-stability filter (skip if the count changed in the last N bars)
+- [x] Count stability — dropped (count unchanged on the previous bar: +0.22R, test +0.14R; brand-new count: +0.23R, test +0.31R; no gain)
 - [x] Weekly timeframe — dropped (only 62 setups in 30 markets with enough weekly history; the edge rule averaged −0.11R, recent −0.31R; no edge, too few trades)
 - [ ] Funding-rate caution for crypto longs (needs funding data)
 
 _Note: the lab-data branch holds only the latest run (the Nov 25 evening run was weekly-only). Re-run the full lab before comparing._
+
+## Nov 25 evening: approval excludes crypto; scanner gained 60 liquid US stocks and 30 funds (sector, country, bond, commodity) to keep about one approval a day.

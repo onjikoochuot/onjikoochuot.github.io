@@ -373,13 +373,14 @@ const HTF_FACTOR: Record<Tf, number> = { "5m": 12, "15m": 4, "30m": 8, "1h": 4, 
 // managed exactly like live trades). Overall the setups lost money and the old score didn't predict results. One kind
 // of setup made money consistently: on the most recent 30% of data it was never tuned on, and on 48 markets added later.
 export const EDGE = {
-  rule: "daily chart, buy only, wave-3 entry, price above its 200-day average, stop at least 1.5× the average daily range away, not forex",
-  trades: 1158, winRate: 0.429, avgR: 0.238, recentAvgR: 0.271, marketsPositive: "52 of 70",
+  rule: "daily chart, buy only, wave-3 entry, price above its 200-day average, stop at least 1.5× the average daily range away, in stocks, stock funds, indices or commodities (not crypto or forex)",
+  trades: 997, winRate: 0.435, avgR: 0.257, recentAvgR: 0.33, marketsPositive: "37 of 47",
   run: "Nov 2026",
 };
 /** Why a setup is or isn't inside the tested edge. Needs the market's symbol to rule out forex. */
 export function testedEdge(s: Pick<Setup, "dir" | "name" | "stop">, tf: Tf, close: number, ema200: number, atr: number, symbol?: string): { ok: boolean; why: string } {
   if (symbol?.endsWith("=X")) return { ok: false, why: "Forex setups lost money in testing (spreads plus choppy swings eat the moves)." };
+  if (symbol?.startsWith("crypto:")) return { ok: false, why: "Crypto setups didn't hold up in testing: small coins lost money, and even the big coins lost on the most recent years. Viko's edge is in stocks, funds, indices and commodities." };
   if (tf !== "1d") return { ok: false, why: `Only daily-chart setups have a tested edge. On ${tf} charts, setups like this lost money after costs.` };
   if (s.dir !== "long") return { ok: false, why: "Sell setups lost money in testing on every timeframe, so Viko only approves buys." };
   if (s.name !== "Wave 3 entry") return { ok: false, why: `Only wave-3 entries have a tested edge; "${s.name}" setups didn't make money in testing.` };

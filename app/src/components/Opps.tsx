@@ -63,7 +63,7 @@ export function FilterBar({ f, set, showTf = true, counts }: { f: Filters; set: 
         <div className="seg" role="radiogroup" aria-label="Direction">{([["both", "Buy and sell"], ["long", "Buy only"], ["short", "Sell only"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={f.dir === v} className={f.dir === v ? "on" : ""} onClick={() => set({ dir: v })}>{l}</button>)}</div>
       </div>
       <div className="opp-checks">
-        <label className="check"><input type="checkbox" checked={f.readyOnly} onChange={(e) => set({ readyOnly: e.target.checked })} /> Only Viko's tested edge, ready now <small className="sub">(the only kind of setup that made money in a 15-year test: daily-chart wave-3 buys in an uptrend, stop at least 1.5× the daily range, not forex; untick to see everything)</small></label>
+        <label className="check"><input type="checkbox" checked={f.readyOnly} onChange={(e) => set({ readyOnly: e.target.checked })} /> Only Viko's tested edge, ready now <small className="sub">(the only kind of setup that made money in a 15-year test: daily-chart wave-3 buys in an uptrend in stocks, funds, indices or commodities, stop at least 1.5× the daily range; untick to see everything)</small></label>
         <label className="check"><input type="checkbox" checked={f.bestPerMarket} onChange={(e) => set({ bestPerMarket: e.target.checked })} /> One row per market (its best timeframe)</label>
       </div>
     </div>
