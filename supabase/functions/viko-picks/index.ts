@@ -5,7 +5,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { candles, sha256, type Tf } from "./market.ts";
 // @ts-ignore engine bundle, pinned to a commit (built by scripts/build-functions.sh)
-import { analyze } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@7c03496a7b0519418b17fafc9383f68236a16a94/supabase/functions/viko-paper/engine.js";
+import { analyze } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@2629304c90a06c0b49080a26f4ca31b90143b095/supabase/functions/viko-paper/engine.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
