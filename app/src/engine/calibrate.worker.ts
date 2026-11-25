@@ -13,7 +13,7 @@ self.onmessage = (e: MessageEvent<CalIn>) => {
   markets.forEach((m, i) => {
     (self as unknown as Worker).postMessage({ kind: "progress", done: i, total: markets.length, label: m.label } satisfies CalMsg);
     if (m.candles.length < 260) return;
-    const res = backtest(m.candles, tf, { level: "WATCH+" });
+    const res = backtest(m.candles, tf, { level: "WATCH+", symbol: m.symbol });
     const c = costsFor(m.symbol);
     for (const t of res.trades) {
       // Costs in units of risk: a win exits at the target (limit order), a loss or an unfinished trade exits at market.

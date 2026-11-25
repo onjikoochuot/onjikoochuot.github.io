@@ -105,7 +105,7 @@ function contextChecks(ctx: Ctx, impulseFrom: number, impulseTo: number, corrFro
   return out;
 }
 
-function finish(ctx: Ctx, baseIn: Omit<Setup, "score" | "hardFail" | "rr1" | "rr2" | "verdict" | "reasons" | "plain" | "tip" | "dir">, lastClose: number, trig: ReturnType<typeof trigger>): Setup {
+function finish(ctx: Ctx, baseIn: Omit<Setup, "score" | "hardFail" | "rr1" | "rr2" | "verdict" | "reasons" | "plain" | "tip" | "dir" | "edge">, lastClose: number, trig: ReturnType<typeof trigger>): Setup {
   let base = baseIn;
   const n = ctx.c.length;
   const entry = base.triggered ? lastClose : trig.level;
@@ -135,7 +135,7 @@ function finish(ctx: Ctx, baseIn: Omit<Setup, "score" | "hardFail" | "rr1" | "rr
   if (stale) reasons.push("Price has already travelled most of the move; the entry is stale.");
   if (indVeto) reasons.push(`${indAgainst} of ${indAll.length} indicators disagree (trend, momentum or a stretched price), so Viko won't approve it yet.`);
   const verdict: Setup["verdict"] = !hardFail && score >= APPROVE_SCORE && base.triggered && rr1 >= MIN_RR && !stale && !indVeto ? "APPROVED" : !hardFail && score >= 55 && !stale ? "WATCH" : "NO TRADE";
-  return { ...base, dir: ctx.dir, entry, checks, score, hardFail, rr1, rr2, verdict, reasons, plain: "", tip: "" };
+  return { ...base, dir: ctx.dir, entry, checks, score, hardFail, rr1, rr2, verdict, reasons, plain: "", tip: "", edge: { ok: false, why: "" } };
 }
 
 /** Similarity & Balance (Neely p. 4-3/4-4): every adjacent pair must relate by at least 1/3 in price OR time. */
@@ -368,7 +368,27 @@ function htfTrend(c: Candle[]): { dir: Dir | null; note: string } {
 
 const HTF_FACTOR: Record<Tf, number> = { "5m": 12, "15m": 4, "30m": 8, "1h": 4, "2h": 12, "4h": 6, "1d": 7, "1w": 4, "1M": 12 };
 
-export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[]): Analysis {
+// ---------- Viko's tested edge ----------
+// The lab replayed the engine on 15 years of real prices (43 markets × 15m/1h/4h/1d, 7,689 setups, after fees and
+// slippage, managed exactly like live trades). Overall the setups lost money (−0.03R a trade) and the old score didn't
+// predict results. One kind of setup made money consistently, also on the most recent 30% of data it was never tuned on:
+export const EDGE = {
+  rule: "daily chart, buy only, wave-3 entry, price above its 200-day average, stop at least 2× the average daily range away, not forex",
+  trades: 419, winRate: 0.449, avgR: 0.285, recentAvgR: 0.263, marketsPositive: "23 of 30",
+  run: "Nov 2026",
+};
+/** Why a setup is or isn't inside the tested edge. Needs the market's symbol to rule out forex. */
+export function testedEdge(s: Pick<Setup, "dir" | "name" | "stop">, tf: Tf, close: number, ema200: number, atr: number, symbol?: string): { ok: boolean; why: string } {
+  if (symbol?.endsWith("=X")) return { ok: false, why: "Forex setups lost money in testing (spreads plus choppy swings eat the moves)." };
+  if (tf !== "1d") return { ok: false, why: `Only daily-chart setups have a tested edge. On ${tf} charts, setups like this lost money after costs.` };
+  if (s.dir !== "long") return { ok: false, why: "Sell setups lost money in testing on every timeframe, so Viko only approves buys." };
+  if (s.name !== "Wave 3 entry") return { ok: false, why: `Only wave-3 entries have a tested edge; "${s.name}" setups didn't make money in testing.` };
+  if (!(close > ema200)) return { ok: false, why: "Price is below its 200-day average (a downtrend). Buys there lost money in testing." };
+  if (!(atr > 0) || Math.abs(close - s.stop) < 2 * atr) return { ok: false, why: "The stop-loss is closer than 2× the average daily range, so normal swings would likely hit it. Tight stops lost money in testing." };
+  return { ok: true, why: `Inside Viko's tested edge: over ${EDGE.trades} past trades like this, ${Math.round(EDGE.winRate * 100)}% won and the average was +${EDGE.avgR.toFixed(2)}R after costs.` };
+}
+
+export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[], symbol?: string): Analysis {
   const ind = computeIndicators(c);
   const mc = mirror(c);
   const indM = computeIndicators(mc);
@@ -387,6 +407,16 @@ export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[]): Analysis {
       // un-mirror prices for shorts
       setups.push({ ...s, dir: "short", id: s.id + "-s", entry: -s.entry, stop: -s.stop, invalidation: -s.invalidation, target1: -s.target1, target2: -s.target2, labels: s.labels.map((l) => ({ ...l, p: -l.p })) });
     }
+  }
+  // Approval now requires the tested edge. The rule score still shows how many book rules agree, but on its own it
+  // didn't predict results, so a setup outside the edge can be at most "WATCH".
+  const n0 = c.length - 1, ema200 = ind.ema200[n0], atrNow = ind.atr[n0];
+  for (const s of setups) {
+    s.edge = testedEdge(s, tf, c[n0].c, ema200, atrNow, symbol);
+    const tradeable = s.triggered && !s.hardFail && s.verdict !== "NO TRADE" && s.rr1 >= 1.5;
+    if (tradeable && s.edge.ok) { s.verdict = "APPROVED"; s.reasons = [s.edge.why]; }
+    else if (s.verdict === "APPROVED") { s.verdict = "WATCH"; s.reasons = [s.edge.why, ...s.reasons]; }
+    else if (!s.edge.ok) s.reasons = [...s.reasons, s.edge.why];
   }
   for (const s of setups) s.plain = plainEnglish(s);
   const rank = (s: Setup) => (s.verdict === "APPROVED" ? 1000 : s.verdict === "WATCH" ? 500 : 0) + s.score - (s.hardFail ? 400 : 0);
@@ -408,6 +438,7 @@ export function plainEnglish(s: Setup): string {
   const f = (x: number) => fmt(x);
   const act = s.dir === "long" ? "Buy" : "Sell short";
   if (s.verdict === "APPROVED") return `${act} near ${f(s.entry)}. Place the stop at ${f(s.stop)}. Take part of the position at ${f(s.target1)} and the rest at ${f(s.target2)}. The count is wrong if price reaches ${f(s.invalidation)}.`;
+  if (s.verdict === "WATCH" && s.triggered && s.edge && !s.edge.ok && !s.hardFail) return `Don't trade this one. ${s.edge.why} Viko only approves its tested edge: ${EDGE.rule}.`;
   if (s.verdict === "WATCH") return s.triggered ? `Don't enter yet. The pattern is forming but only ${s.score}% of the book rules agree. Re-check after the next candle closes.` : `Don't enter yet. Set an alert at ${f(s.entry)}: the trigger fires on a candle close beyond it. Then re-check this verdict.`;
   return "Don't trade this. Stand aside until a cleaner structure forms.";
 }

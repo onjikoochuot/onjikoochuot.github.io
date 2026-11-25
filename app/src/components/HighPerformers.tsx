@@ -75,7 +75,7 @@ export function LiveScan({ watchlist, ...p }: Common & { watchlist: Instrument[]
         const [m, tf] = queue[i++];
         try {
           const c = await getCandles(m.id, tf);
-          const best = analyze(c, tf).best;
+          const best = analyze(c, tf, undefined, m.id).best;
           if (best) out.push({ symbol: m.id, label: m.label, name: m.name, market: m.market, tf, price: c[c.length - 1].c, setup: best, checkedAt: Date.now() });
         } catch { bad++; }
         n++;

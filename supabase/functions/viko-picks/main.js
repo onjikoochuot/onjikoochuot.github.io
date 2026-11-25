@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
         try {
           const k = await candles(id, tf);
           if (k.length < 150) continue;
-          const a = analyze(k, tf);
+          const a = analyze(k, tf, void 0, id);
           const s = a.best;
           const last = k[k.length - 1];
           let news_warn = null;
@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
           const big = cal.find((e) => e.impact === "High" && cur.includes(e.currency) && e.at > now && e.at - now <= windowMs);
           if (big) news_warn = `${big.title} (${big.currency}) is due ${new Date(big.at).toISOString()}`;
           let setup = null;
-          if (s) setup = { name: s.name, degree: s.degree, dir: s.dir, entry: s.entry, stop: s.stop, invalidation: s.invalidation, target1: s.target1, target2: s.target2, score: s.score, verdict: s.verdict, hardFail: s.hardFail, triggered: s.triggered, rr1: s.rr1, rr2: s.rr2, expectBars: s.expectBars };
+          if (s) setup = { name: s.name, degree: s.degree, dir: s.dir, entry: s.entry, stop: s.stop, invalidation: s.invalidation, target1: s.target1, target2: s.target2, score: s.score, verdict: s.verdict, hardFail: s.hardFail, triggered: s.triggered, rr1: s.rr1, rr2: s.rr2, expectBars: s.expectBars, edge: s.edge };
           rows.push({
             symbol: id,
             tf,

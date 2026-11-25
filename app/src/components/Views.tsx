@@ -18,7 +18,7 @@ export function Backtest({ symbol, label, tf }: { symbol: string; label: string;
       const c = candles ?? (await getCandles(symbol, tf));
       setCandles(c);
       await new Promise((r) => setTimeout(r, 30));
-      setRes(backtest(c, tf, { level }));
+      setRes(backtest(c, tf, { level, symbol }));
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   };
@@ -107,9 +107,11 @@ export function Rulebook() {
       <h2>How the verdict is reached</h2>
       <p>Every chart goes through the same three stages. First, price is broken into monowaves at three degrees of trend (minor, intermediate, primary). Then each degree is tested against four Elliott setups, in both directions: the start of wave 3, the start of wave 5, a finished a-b-c correction inside a trend, and a finished five-wave impulse confirmed by a 2-4 trendline break. Finally every candidate is scored against the books.</p>
       <h3>The gate</h3>
-      <p>A setup is approved only when all four of these hold: no rule marked "must pass" is broken; at least 80% of the weighted book rules agree; the entry trigger (a significant reversal bar, Wyckoff ch. 27) has fired; and the reward to target 1 is at least twice the risk. Anything less is "watch" or "no trade".</p>
-      <h3>What the 80% means</h3>
-      <p>It means 80% of the rules agree, by weight. Neither Neely nor Villahermosa gives win-rate figures, so no honest tool can claim "80% chance of success" from these books alone. The Backtest tab measures the real hit rate of the approved setups on each market's history. Treat that number, not the dial, as your estimate of the odds, and only once it rests on 30 or more trades.</p>
+      <p>A setup is approved only when: no rule marked "must pass" is broken; the entry trigger (a significant reversal bar, Wyckoff ch. 27) has fired; the reward to target 1 is at least 1.5× the risk; and it is inside Viko's <b>tested edge</b>. Anything less is "watch" or "no trade".</p>
+      <h3>The tested edge (Nov 2026)</h3>
+      <p>Viko's research lab replayed these rules candle by candle on 15 years of real prices: 43 markets (crypto, forex, gold and commodities, stock indices, large stocks) on 15-minute, 1-hour, 4-hour and daily charts, 7,689 setups, each managed exactly like a live trade (half at target 1, trailing stop, target 2, time limit) after fees and slippage. Overall the setups lost a little (−0.03R a trade), the rule score did not predict results, forex and short timeframes lost the most, and sell setups lost on every timeframe. One kind made money consistently, including on the most recent 30% of the data it was never tuned on: <b>daily-chart wave-3 buys with price above its 200-day average and a stop at least 2× the average daily range away, outside forex</b>. Over 419 such trades, 45% won and the average was +0.29R after costs (+0.26R on the recent data; 23 of 30 markets positive). That is a modest, real edge, not a guarantee: some years lost money. The lab re-runs regularly, and the rule will change if the evidence does.</p>
+      <h3>What the score means</h3>
+      <p>It means 80% of the rules agree, by weight. Neither Neely nor Villahermosa gives win-rate figures, so no honest tool can claim "80% chance of success" from these books alone. The Backtest tab measures the real hit rate of the approved setups on each market's history. Treat that number, not the dial, as your estimate of the odds, and only once it rests on 30 or more trades. In the 15-year test, higher scores did not win more often, which is why approval now depends on the tested edge.</p>
       <h3>The Elliott rules, as Neely wrote them</h3>
       <p>Every Neely rule in the checklist cites the page of <i>Mastering Elliott Wave</i> it comes from. Rules marked "must pass" void a setup outright:</p>
       <ul className="rules-list">

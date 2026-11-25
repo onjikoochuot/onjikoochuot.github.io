@@ -9,7 +9,7 @@ export type BacktestResult = { trades: Trade[]; wins: number; losses: number; wi
  * An approved setup enters at that bar's close; the trade is a win if target 1
  * is reached before the stop, a loss if the stop is hit first (same bar = loss).
  */
-export function backtest(c: Candle[], tf: Tf, opts: { start?: number; level?: "APPROVED" | "WATCH+"; maxHold?: number; onProgress?: (f: number) => void } = {}): BacktestResult {
+export function backtest(c: Candle[], tf: Tf, opts: { start?: number; level?: "APPROVED" | "WATCH+"; maxHold?: number; onProgress?: (f: number) => void; symbol?: string } = {}): BacktestResult {
   const start = Math.max(220, opts.start ?? 220);
   const level = opts.level ?? "APPROVED";
   const maxHold = opts.maxHold ?? 120;
@@ -18,7 +18,7 @@ export function backtest(c: Candle[], tf: Tf, opts: { start?: number; level?: "A
   for (let i = start; i < c.length - 1; i++) {
     if (opts.onProgress && i % 25 === 0) opts.onProgress((i - start) / (c.length - start));
     if (i <= busyUntil) continue;
-    const a = analyze(c.slice(0, i + 1), tf);
+    const a = analyze(c.slice(Math.max(0, i - 899), i + 1), tf, undefined, opts.symbol);
     const s = a.setups.find((x) => (level === "APPROVED" ? x.verdict === "APPROVED" : x.verdict !== "NO TRADE" && x.triggered && x.rr1 >= 2 && !x.hardFail));
     if (!s) continue;
     const long = s.dir === "long";

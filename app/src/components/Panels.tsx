@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Analysis, Check, Setup } from "../engine/types";
-import { fmt } from "../engine/analyze";
+import { fmt, EDGE } from "../engine/analyze";
 
 export function Dial({ score, verdict }: { score: number; verdict: Setup["verdict"] }) {
   const R = 74, cx = 90, cy = 90, sweep = 260, start = 140;
@@ -63,6 +63,11 @@ export function VerdictPanel({ symbol, tfLabel, analysis, setup, onPick, account
         <div><dt>Count invalid at</dt><dd className="mono">{fmt(setup.invalidation)}</dd></div>
         <div><dt>Size at {riskPct}% risk</dt><dd className="mono">{units >= 100 ? units.toFixed(0) : units.toPrecision(3)} units</dd></div>
       </dl>}
+      {setup.edge && (
+        <p className={`edge-line ${setup.edge.ok ? "edge-ok" : "edge-no"}`}>
+          <b>{setup.edge.ok ? "Tested edge ✓" : "Outside the tested edge"}</b> {setup.edge.ok ? setup.edge.why : "Only one kind of setup made money in Viko's 15-year test: " + EDGE.rule + "."}
+        </p>
+      )}
       {setup.reasons.length > 0 && setup.verdict !== "APPROVED" && (
         <ul className="why">{setup.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
       )}

@@ -10,7 +10,7 @@ const SECTIONS: { id: string; title: string; open?: string; steps: string[] }[] 
   { id: "analyse", title: "2. Read any chart", open: "analyse", steps: [
     "Find a market with the search box, or tap one on the left. Each group has See all to browse every market (373 in total: crypto, stocks, indices and ETFs, forex, commodities).",
     "Choose a timeframe from 5 minutes to monthly. Viko counts the Elliott waves (Neely's rules), reads the Wyckoff phase, and checks six indicators (EMA 20/50/200, RSI, MACD, ATR, Bollinger). The verdict is Buy, Sell, Get ready or Don't trade.",
-    "The score is the share of all those rules that agree. 80% or more, with the entry signal fired and at least twice the reward to risk, means Approved. If most indicators disagree, Viko won't approve the trade, however good the waves look.",
+    "The score is the share of all those rules that agree. Since November 2026, Approved means something stricter: Viko replayed its rules on 15 years of real prices (43 markets, 7,689 setups, after costs), found that most setups lost money and the score alone didn't predict results, and now approves only its tested edge: daily-chart wave-3 buys, price above its 200-day average, stop at least 2× the average daily range, not forex. Over 419 past trades like that, 45% won and the average was +0.29R after costs. Everything else is shown as Watch, with the reason.",
     "The tip card tells you where to enter, where the stop-loss goes and where to take profit. Under it: Paper trade this (practice) and Trade with real money.",
   ] },
   { id: "top", title: "3. High performers", open: "top", steps: [

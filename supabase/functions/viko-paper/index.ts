@@ -179,7 +179,7 @@ async function autopilot(db: DB, acc: any) {
       try {
         const c = await candles(w.id, tf);
         if (c.length < 150) continue;
-        const a = analyze(c, tf);
+        const a = analyze(c, tf, undefined, w.id);
         // Strict: only approved setups. Practice: also triggered, rule-clean setups at 65%+ with 2R or more.
         const s = a.setups.find((x: any) => x.verdict === "APPROVED")
           ?? (acc.auto_level === "practice" ? a.setups.find((x: any) => x.verdict === "WATCH" && !x.hardFail && x.triggered && x.rr1 >= 2 && x.score >= 65) : undefined);
@@ -320,7 +320,7 @@ async function checkPending(db: DB, key: string) {
         if (!reached) continue;
       } else {
         const c: Candle[] = await candles(r.symbol, r.tf);
-        const a = analyze(c, r.tf);
+        const a = analyze(c, r.tf, undefined, r.symbol);
         const s = a.setups.find((x: any) => x.dir === r.dir && !x.hardFail && x.triggered && x.rr1 >= 2 && x.verdict !== "NO TRADE" && x.score >= r.min_score);
         if (!s) continue;
         lv = { stop: s.stop, target1: s.target1, target2: s.target2, score: s.score, name: `${s.name} (${s.degree})` };

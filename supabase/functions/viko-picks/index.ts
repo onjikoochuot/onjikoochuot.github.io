@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
         try {
           const k = await candles(id, tf);
           if (k.length < 150) continue;
-          const a = analyze(k, tf);
+          const a = analyze(k, tf, undefined, id);
           const s = a.best;
           const last = k[k.length - 1];
           let news_warn: string | null = null;
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
           if (big) news_warn = `${big.title} (${big.currency}) is due ${new Date(big.at).toISOString()}`;
           let setup = null;
           // Only what the Picks screen needs, to keep the list small for phones.
-          if (s) setup = { name: s.name, degree: s.degree, dir: s.dir, entry: s.entry, stop: s.stop, invalidation: s.invalidation, target1: s.target1, target2: s.target2, score: s.score, verdict: s.verdict, hardFail: s.hardFail, triggered: s.triggered, rr1: s.rr1, rr2: s.rr2, expectBars: s.expectBars };
+          if (s) setup = { name: s.name, degree: s.degree, dir: s.dir, entry: s.entry, stop: s.stop, invalidation: s.invalidation, target1: s.target1, target2: s.target2, score: s.score, verdict: s.verdict, hardFail: s.hardFail, triggered: s.triggered, rr1: s.rr1, rr2: s.rr2, expectBars: s.expectBars, edge: s.edge };
           rows.push({
             symbol: id, tf, label, market, price: last.c, candle_t: last.t, scanned_at: new Date().toISOString(),
             verdict: s?.verdict ?? null, dir: s?.dir ?? null, score: s?.score ?? null, hard_fail: s?.hardFail ?? null,

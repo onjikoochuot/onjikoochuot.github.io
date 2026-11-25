@@ -145,7 +145,7 @@ export default function App() {
       const h = HTF[tf];
       const hc = h ? await getCandles(inst.id, h).catch(() => undefined) : undefined;
       setHtfC(hc); setBase(c);
-      setAnalysis(analyze(c, tf, hc));
+      setAnalysis(analyze(c, tf, hc, inst.id));
     } catch (e) { setErr((e as Error).message); setAnalysis(null); setBase([]); }
     setLoading(false);
   };
@@ -154,7 +154,7 @@ export default function App() {
   // Live candles; re-run the rulebook on every candle close and at most every 10 s in between.
   const lastRun = useRef(0);
   const liveRef = useRef<Candle[]>([]);
-  const rerun = useCallback(() => { if (liveRef.current.length) { setAnalysis(analyze(liveRef.current, tf, htfC)); lastRun.current = Date.now(); } }, [tf, htfC]);
+  const rerun = useCallback(() => { if (liveRef.current.length) { setAnalysis(analyze(liveRef.current, tf, htfC, inst.id)); lastRun.current = Date.now(); } }, [tf, htfC, inst.id]);
   const { candles, status, tickAt } = useLiveCandles(inst.id, tf, base, rerun);
   liveRef.current = candles;
   useEffect(() => { if (candles.length && candles !== base && Date.now() - lastRun.current > 10_000) rerun(); }, [candles, base, rerun]);

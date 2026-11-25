@@ -42,6 +42,8 @@ export type Setup = {
   plain: string; // plain-English instruction
   tip: string; // layman tip
   expectBars: number; // rough bars to target 1, from wave timing
+  /** Viko's tested edge: does this setup match the only kind that made money in the 15-year test? */
+  edge: { ok: boolean; why: string };
 };
 
 export type WyckoffEvent = { i: number; p: number; code: string; name: string };

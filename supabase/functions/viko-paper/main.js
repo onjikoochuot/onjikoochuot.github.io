@@ -342,7 +342,7 @@ async function autopilot(db, acc) {
       try {
         const c = await candles(w.id, tf);
         if (c.length < 150) continue;
-        const a = analyze(c, tf);
+        const a = analyze(c, tf, void 0, w.id);
         const s = a.setups.find((x) => x.verdict === "APPROVED") ?? (acc.auto_level === "practice" ? a.setups.find((x) => x.verdict === "WATCH" && !x.hardFail && x.triggered && x.rr1 >= 2 && x.score >= 65) : void 0);
         if (!s) continue;
         const windowMs = Math.max(2, 2 * (TF_HOURS[tf] ?? 1)) * 36e5;
@@ -498,7 +498,7 @@ async function checkPending(db, key) {
         if (!reached) continue;
       } else {
         const c = await candles(r.symbol, r.tf);
-        const a = analyze(c, r.tf);
+        const a = analyze(c, r.tf, void 0, r.symbol);
         const s = a.setups.find((x) => x.dir === r.dir && !x.hardFail && x.triggered && x.rr1 >= 2 && x.verdict !== "NO TRADE" && x.score >= r.min_score);
         if (!s) continue;
         lv = { stop: s.stop, target1: s.target1, target2: s.target2, score: s.score, name: `${s.name} (${s.degree})` };

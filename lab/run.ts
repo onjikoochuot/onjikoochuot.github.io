@@ -99,7 +99,7 @@ async function main() {
     for (let i = 300; i < c.length - 2; i++) {
       if (i <= busyUntil) continue;
       const win = c.slice(Math.max(0, i + 1 - WINDOW), i + 1);
-      const a = analyze(win, tf);
+      const a = analyze(win, tf, undefined, sym);
       // every setup Viko would show as tradeable now (not only approved), so the lab can learn which features matter
       const s = a.setups.find((x) => x.triggered && !x.hardFail && x.verdict !== "NO TRADE" && x.rr1 >= 1.5);
       if (!s) continue;
@@ -110,7 +110,7 @@ async function main() {
       for (const k of s.checks) checks[k.id] = k.pass === null ? null : k.pass ? 1 : 0;
       const wy = a.wyckoff;
       appendFileSync(out, JSON.stringify({
-        sym, kind: kindOf(sym), tf, t: c[i].t, dir: s.dir, name: s.name, pattern: s.pattern, degree: s.degree, score: s.score, verdict: s.verdict, rr1: +s.rr1.toFixed(2), rr2: +s.rr2.toFixed(2),
+        sym, kind: kindOf(sym), tf, t: c[i].t, dir: s.dir, name: s.name, pattern: s.pattern, degree: s.degree, score: s.score, verdict: s.verdict, edge: s.edge?.ok ?? null, rr1: +s.rr1.toFixed(2), rr2: +s.rr2.toFixed(2),
         stopPct: +(Math.abs(c[i].c - s.stop) / c[i].c * 100).toFixed(3), stopAtr: atr ? +(Math.abs(c[i].c - s.stop) / atr).toFixed(2) : null,
         wyKind: wy.kind, wyPhase: wy.phase, wyBias: wy.bias, htf: a.htfTrend, checks, ...m,
       }) + "\n");

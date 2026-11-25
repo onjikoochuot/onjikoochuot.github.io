@@ -16,14 +16,17 @@ export const nameOf = (id: string, fallback = "") => NAME.get(id) ?? fallback;
 
 const ahead = (o: Opp) => (o.setup.dir === "long" ? o.setup.target1 > o.price && o.setup.stop < o.price : o.setup.target1 < o.price && o.setup.stop > o.price);
 /** Tradeable now: entry signal fired, no must-pass rule broken, price still between stop and target 1, and at least 1.5× reward to risk. */
-export const ready = (o: Opp) => o.setup.triggered && !o.setup.hardFail && o.setup.verdict !== "NO TRADE" && o.setup.rr1 >= 1.5 && ahead(o);
+/** Inside Viko's tested edge (the only kind of setup that made money in the 15-year test). Old cached rows have no edge field. */
+export const edgeOk = (o: Opp) => o.setup.edge?.ok === true;
+/** Ready to trade now: fired, rule-clean, enough reward left, and inside the tested edge. */
+export const ready = (o: Opp) => o.setup.triggered && !o.setup.hardFail && o.setup.verdict !== "NO TRADE" && o.setup.rr1 >= 1.5 && ahead(o) && edgeOk(o);
 export const pickOfOpp = (o: Opp): AutoPick => ({ symbol: o.symbol, label: o.label, market: o.market, tf: o.tf, dir: o.setup.dir, score: o.setup.score, name: `${o.setup.name} (${o.setup.degree})`, stop: o.setup.stop, target1: o.setup.target1, target2: o.setup.target2, expectBars: o.setup.expectBars ?? 3, price: o.price, entryLevel: o.setup.entry, triggered: o.setup.triggered });
 /** Not ready yet, but a sound setup whose trigger hasn't fired: it can be placed as a waiting order. */
-export const waitable = (o: Opp) => !o.setup.triggered && !o.setup.hardFail && o.setup.verdict !== "NO TRADE";
+export const waitable = (o: Opp) => !o.setup.triggered && !o.setup.hardFail && o.setup.verdict !== "NO TRADE" && edgeOk(o);
 const move = (o: Opp, to: number) => ((o.setup.dir === "long" ? to - o.setup.entry : o.setup.entry - to) / o.setup.entry) * 100;
 const pc = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
 const hrs = (h: number) => (h < 1 ? `${Math.max(5, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : h < 24 * 60 ? `${Math.round(h / 24)} days` : `${Math.round(h / 730)} mo`);
-const status = (o: Opp) => (o.setup.verdict === "APPROVED" && ready(o) ? ["Approved", "ok"] : ready(o) ? ["Ready", "watch"] : o.setup.hardFail ? ["Rule broken", "no"] : !o.setup.triggered ? ["Waiting for entry", "no"] : ahead(o) ? ["Reward too small", "no"] : ["Already moved", "no"]) as [string, string];
+const status = (o: Opp) => (o.setup.verdict === "APPROVED" && ready(o) ? ["Approved: tested edge", "ok"] : ready(o) ? ["Ready", "watch"] : o.setup.hardFail ? ["Rule broken", "no"] : !edgeOk(o) && o.setup.triggered ? ["Outside tested edge", "no"] : !o.setup.triggered ? ["Waiting for entry", "no"] : ahead(o) ? ["Reward too small", "no"] : ["Already moved", "no"]) as [string, string];
 
 /** Filters shared by High performers and Scan, remembered per page. */
 export type Filters = { market: Market | "All"; tf: Tf | "Any"; min: number; dir: "both" | "long" | "short"; readyOnly: boolean; bestPerMarket: boolean };
@@ -60,7 +63,7 @@ export function FilterBar({ f, set, showTf = true, counts }: { f: Filters; set: 
         <div className="seg" role="radiogroup" aria-label="Direction">{([["both", "Buy and sell"], ["long", "Buy only"], ["short", "Sell only"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={f.dir === v} className={f.dir === v ? "on" : ""} onClick={() => set({ dir: v })}>{l}</button>)}</div>
       </div>
       <div className="opp-checks">
-        <label className="check"><input type="checkbox" checked={f.readyOnly} onChange={(e) => set({ readyOnly: e.target.checked })} /> Only ones ready to trade now <small className="sub">(untick to also see setups you can place as waiting orders)</small></label>
+        <label className="check"><input type="checkbox" checked={f.readyOnly} onChange={(e) => set({ readyOnly: e.target.checked })} /> Only Viko's tested edge, ready now <small className="sub">(the only kind of setup that made money in a 15-year test: daily-chart wave-3 buys in an uptrend, wide stop, not forex; untick to see everything)</small></label>
         <label className="check"><input type="checkbox" checked={f.bestPerMarket} onChange={(e) => set({ bestPerMarket: e.target.checked })} /> One row per market (its best timeframe)</label>
       </div>
     </div>
