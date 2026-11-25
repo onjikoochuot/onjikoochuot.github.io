@@ -160,7 +160,7 @@ async function sha256(s) {
 }
 
 // supabase/functions/viko-paper/index.ts
-import { analyze, makeTip } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@c77a63cf778ec7acec7aee88b13f7c62705344c2/supabase/functions/viko-paper/engine.js";
+import { analyze, makeTip } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@de01810ddd757f219fb99b6f069d7f510b132e8c/supabase/functions/viko-paper/engine.js";
 var CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-viko-key",
