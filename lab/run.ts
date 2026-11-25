@@ -18,10 +18,11 @@ const GROUPS: Record<string, string[]> = {
   // Wider universe, daily only: is the edge real across many more markets, and how often does it fire?
   stocks2: ["yahoo:GOOGL", "yahoo:JPM", "yahoo:V", "yahoo:UNH", "yahoo:XOM", "yahoo:JNJ", "yahoo:PG", "yahoo:HD", "yahoo:COST", "yahoo:AVGO", "yahoo:AMD", "yahoo:NFLX", "yahoo:KO", "yahoo:PEP", "yahoo:WMT", "yahoo:BAC", "yahoo:CRM", "yahoo:ORCL", "yahoo:ADBE", "yahoo:LLY"],
   alts2: ["crypto:TRXUSDT", "crypto:BCHUSDT", "crypto:XLMUSDT", "crypto:UNIUSDT", "crypto:AAVEUSDT", "crypto:FILUSDT", "crypto:ETCUSDT", "crypto:HBARUSDT", "crypto:ICPUSDT", "crypto:APTUSDT"],
+  smallcaps: ["crypto:KAITOUSDT", "crypto:NOTUSDT", "crypto:WIFUSDT", "crypto:SUSHIUSDT", "crypto:PYTHUSDT", "crypto:BONKUSDT", "crypto:FLOKIUSDT", "crypto:JUPUSDT", "crypto:ARBUSDT", "crypto:OPUSDT", "crypto:SEIUSDT", "crypto:INJUSDT", "crypto:TIAUSDT", "crypto:GALAUSDT", "crypto:SANDUSDT"],
   world: ["yahoo:^RUT", "yahoo:^STOXX50E", "yahoo:^HSI", "yahoo:^NSEI", "yahoo:PA=F", "yahoo:PL=F", "yahoo:ZC=F", "yahoo:ZW=F", "yahoo:KC=F", "yahoo:BZ=F"],
 };
-GROUPS.weekly = Object.entries(GROUPS).filter(([g]) => g !== "fx").flatMap(([, v]) => v); // every non-forex market, weekly chart
-const GROUP_TFS: Record<string, Tf[]> = { stocks2: ["1d"], alts2: ["1d"], world: ["1d"], weekly: ["1w"] };
+GROUPS.weekly = Object.entries(GROUPS).filter(([g]) => g !== "fx" && g !== "smallcaps").flatMap(([, v]) => v); // every non-forex market, weekly chart
+const GROUP_TFS: Record<string, Tf[]> = { stocks2: ["1d"], alts2: ["1d"], world: ["1d"], weekly: ["1w"], smallcaps: ["1d"] };
 const TFS_DEFAULT: Tf[] = (process.env.LAB_TFS?.split(",") as Tf[]) ?? ["15m", "1h", "4h", "1d"];
 const TF_SEC: Record<string, number> = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
 const WINDOW = 900; // candles the engine sees each time (the live app loads about this many)
@@ -139,13 +140,23 @@ async function main() {
     try { c = sym.startsWith("crypto:") ? await binance(sym.slice(7), tf, tf === "1d" ? 3000 : 4000) : await yahoo(sym.slice(6), tf); } catch (e) { console.log(`${sym} ${tf}: ${(e as Error).message}`); continue; }
     if (c.length < (tf === "1w" ? 260 : 400)) { console.log(`${sym} ${tf}: only ${c.length} candles, skipped`); continue; }
     let busyUntil = -1, n = 0;
+    const seen: (string | null)[] = []; // key of the tradeable setup at each analysed bar (count-stability feature)
+    const keyOf = (x: { dir: string; name: string; labels: { text: string; i: number }[] }) => `${x.dir}|${x.name}|${x.labels.map((l) => l.text + l.i).join(",")}`;
     for (let i = tf === "1w" ? 220 : 300; i < c.length - 2; i++) {
-      if (i <= busyUntil) continue;
+      if (i <= busyUntil) { seen[i] = null; continue; }
       const win = c.slice(Math.max(0, i + 1 - WINDOW), i + 1);
       const a = analyze(win, tf, undefined, sym);
       // every setup Viko would show as tradeable now (not only approved), so the lab can learn which features matter
       const s = a.setups.find((x) => x.triggered && !x.hardFail && x.verdict !== "NO TRADE" && x.rr1 >= 1.5);
+      // the same count (direction, setup and wave points) visible on the previous bars, ignoring the trigger
+      const off = Math.max(0, i + 1 - WINDOW);
+      const anyKey = (x: any) => keyOf({ ...x, labels: x.labels.map((l: any) => ({ text: l.text, i: l.i + off })) });
+      const cand = a.setups.find((x) => !x.hardFail && x.verdict !== "NO TRADE");
+      seen[i] = cand ? anyKey(cand) : null;
       if (!s) continue;
+      const myKey = anyKey(s);
+      const stable1 = seen[i - 1] === myKey, stable2 = stable1 && seen[i - 2] === myKey;
+      if (process.env.LAB_DEBUG) console.log("dbg", myKey, "|", seen[i - 1], "|", seen[i - 2]);
       const m = manage(c, i, s, sym, MAX_HOLD[tf]);
       if (!m) continue;
       const atr = a.ind.atr[a.ind.atr.length - 1] ?? null;
@@ -165,7 +176,7 @@ async function main() {
       const brokeW1 = L["1"] != null ? (s.dir === "long" ? cl > L["1"] : cl < L["1"]) : null;
       const atrRel = (() => { const xs = a.ind.atr.slice(-120).filter((v) => v > 0).sort((p, q) => p - q); return xs.length > 20 && atr ? +(xs.filter((v) => v <= atr).length / xs.length).toFixed(2) : null; })();
       const vol20r = (() => { const r = (k: number) => Math.log(c[k].c / c[k - 1].c); if (j < 140) return null; const sd = (a0: number, len: number) => { const xs: number[] = []; for (let k = a0 - len + 1; k <= a0; k++) xs.push(r(k)); const m = xs.reduce((p, q) => p + q, 0) / xs.length; return Math.sqrt(xs.reduce((p, q) => p + (q - m) ** 2, 0) / xs.length); }; const meds: number[] = []; for (let k = j - 120; k <= j; k += 5) meds.push(sd(k, 20)); meds.sort((p, q) => p - q); return +(sd(j, 20) / meds[Math.floor(meds.length / 2)]).toFixed(2); })();
-      const extra = { ret63, aboveSma100: sma100 ? cl > sma100 : null, adx: adx(win), volRatio, donBreak, w2Depth, brokeW1, atrPct: atrRel, volRegime: vol20r, rNetAtr: manageAtr(c, i, s, sym, MAX_HOLD[tf], atr ?? 0), weekday: new Date(c[i].t * 1000).getUTCDay() };
+      const extra = { ret63, aboveSma100: sma100 ? cl > sma100 : null, adx: adx(win), volRatio, donBreak, w2Depth, brokeW1, atrPct: atrRel, volRegime: vol20r, rNetAtr: manageAtr(c, i, s, sym, MAX_HOLD[tf], atr ?? 0), stable1, stable2, dollarVol20: +(c.slice(Math.max(0, j - 20), j).reduce((x, b) => x + b.v * b.c, 0) / Math.min(20, j)).toFixed(0), weekday: new Date(c[i].t * 1000).getUTCDay() };
       appendFileSync(out, JSON.stringify({
         sym, kind: kindOf(sym), tf, t: c[i].t, dir: s.dir, name: s.name, pattern: s.pattern, degree: s.degree, score: s.score, verdict: s.verdict, edge: s.edge?.ok ?? null, rr1: +s.rr1.toFixed(2), rr2: +s.rr2.toFixed(2),
         stopPct: +(Math.abs(c[i].c - s.stop) / c[i].c * 100).toFixed(3), stopAtr: atr ? +(Math.abs(c[i].c - s.stop) / atr).toFixed(2) : null,
