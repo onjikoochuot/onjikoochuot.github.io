@@ -16,7 +16,7 @@ import { nextPeak, trailStop } from "./trail.ts";
 import { costsFor, marketFill } from "./costs.ts";
 import { candles, quotes, sha256, type Candle, type Tf } from "./market.ts";
 // @ts-ignore engine bundle (scripts/build-functions.sh), pinned to a commit
-import { analyze, makeTip } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@de01810ddd757f219fb99b6f069d7f510b132e8c/supabase/functions/viko-paper/engine.js";
+import { analyze, makeTip } from "https://cdn.jsdelivr.net/gh/onjikoochuot/onjikoochuot.github.io@7c03496a7b0519418b17fafc9383f68236a16a94/supabase/functions/viko-paper/engine.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
