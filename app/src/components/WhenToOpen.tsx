@@ -195,7 +195,7 @@ export function WaitingOrders({ appKey, kind }: { appKey: string; kind?: "paper"
   const [d, setD] = useState<{ waiting: PendingOrder[]; recent: PendingOrder[] } | null>(null);
   const [err, setErr] = useState("");
   // Also tells the banner at the top, so it updates the moment you approve or skip.
-  const load = () => paper.pendingList(appKey).then((x) => { setD(x); setErr(""); window.dispatchEvent(new CustomEvent("viko:pending", { detail: x.waiting.filter((o) => o.status === "asking") })); }).catch((e) => setErr((e as Error).message));
+  const load = () => paper.pendingList(appKey).then((r) => { const x = { waiting: r?.waiting ?? [], recent: r?.recent ?? [] }; setD(x); setErr(""); window.dispatchEvent(new CustomEvent("viko:pending", { detail: x.waiting.filter((o) => o.status === "asking") })); }).catch((e) => setErr((e as Error).message));
   useEffect(() => { if (!appKey) return; load(); const id = setInterval(load, 30000); return () => clearInterval(id); }, [appKey]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!d) return err ? <p className="err">{err}</p> : null;
   const mine = (o: PendingOrder) => !kind || o.kind === kind;
@@ -232,7 +232,7 @@ export function ApprovalBanner({ appKey, go }: { appKey: string; go: (v: "paper"
   const [asking, setAsking] = useState<PendingOrder[]>([]);
   useEffect(() => {
     if (!appKey) return;
-    const load = () => paper.pendingList(appKey).then((x) => setAsking(x.waiting.filter((o) => o.status === "asking"))).catch(() => {});
+    const load = () => paper.pendingList(appKey).then((x) => setAsking((x?.waiting ?? []).filter((o) => o.status === "asking"))).catch(() => {});
     const fresh = (e: Event) => setAsking((e as CustomEvent<PendingOrder[]>).detail);
     window.addEventListener("viko:pending", fresh);
     load(); const id = setInterval(load, 60000); return () => { clearInterval(id); window.removeEventListener("viko:pending", fresh); };
