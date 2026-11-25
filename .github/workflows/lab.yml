@@ -6,7 +6,7 @@ on:
     inputs:
       groups:
         description: "Market groups, comma separated"
-        default: "majors,alts,fx,commod,indices,stocks"
+        default: "majors,alts,fx,commod,indices,stocks,stocks2,alts2,world"
 jobs:
   plan:
     runs-on: ubuntu-latest
