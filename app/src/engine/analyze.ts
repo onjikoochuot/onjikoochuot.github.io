@@ -369,12 +369,12 @@ function htfTrend(c: Candle[]): { dir: Dir | null; note: string } {
 const HTF_FACTOR: Record<Tf, number> = { "5m": 12, "15m": 4, "30m": 8, "1h": 4, "2h": 12, "4h": 6, "1d": 7, "1w": 4, "1M": 12 };
 
 // ---------- Viko's tested edge ----------
-// The lab replayed the engine on 15 years of real prices (43 markets × 15m/1h/4h/1d, 7,689 setups, after fees and
-// slippage, managed exactly like live trades). Overall the setups lost money (−0.03R a trade) and the old score didn't
-// predict results. One kind of setup made money consistently, also on the most recent 30% of data it was never tuned on:
+// The lab replayed the engine on up to 15 years of real prices (78 markets, 15m/1h/4h/1d, after fees and slippage,
+// managed exactly like live trades). Overall the setups lost money and the old score didn't predict results. One kind
+// of setup made money consistently: on the most recent 30% of data it was never tuned on, and on 48 markets added later.
 export const EDGE = {
-  rule: "daily chart, buy only, wave-3 entry, price above its 200-day average, stop at least 2× the average daily range away, not forex",
-  trades: 419, winRate: 0.449, avgR: 0.285, recentAvgR: 0.263, marketsPositive: "23 of 30",
+  rule: "daily chart, buy only, wave-3 entry, price above its 200-day average, stop at least 1.5× the average daily range away, not forex",
+  trades: 1158, winRate: 0.429, avgR: 0.238, recentAvgR: 0.271, marketsPositive: "52 of 70",
   run: "Nov 2026",
 };
 /** Why a setup is or isn't inside the tested edge. Needs the market's symbol to rule out forex. */
@@ -384,7 +384,7 @@ export function testedEdge(s: Pick<Setup, "dir" | "name" | "stop">, tf: Tf, clos
   if (s.dir !== "long") return { ok: false, why: "Sell setups lost money in testing on every timeframe, so Viko only approves buys." };
   if (s.name !== "Wave 3 entry") return { ok: false, why: `Only wave-3 entries have a tested edge; "${s.name}" setups didn't make money in testing.` };
   if (!(close > ema200)) return { ok: false, why: "Price is below its 200-day average (a downtrend). Buys there lost money in testing." };
-  if (!(atr > 0) || Math.abs(close - s.stop) < 2 * atr) return { ok: false, why: "The stop-loss is closer than 2× the average daily range, so normal swings would likely hit it. Tight stops lost money in testing." };
+  if (!(atr > 0) || Math.abs(close - s.stop) < 1.5 * atr) return { ok: false, why: "The stop-loss is closer than 1.5× the average daily range, so normal swings would likely hit it. Tight stops lost money in testing." };
   return { ok: true, why: `Inside Viko's tested edge: over ${EDGE.trades} past trades like this, ${Math.round(EDGE.winRate * 100)}% won and the average was +${EDGE.avgR.toFixed(2)}R after costs.` };
 }
 

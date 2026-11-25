@@ -11,7 +11,7 @@ describe("tested edge", () => {
     expect(testedEdge({ ...s, dir: "short", stop: 110 }, "1d", 100, 105, 4).ok).toBe(false); // sells
     expect(testedEdge({ ...s, name: "Wave 5 entry" }, "1d", 100, 95, 4).ok).toBe(false); // not wave 3
     expect(testedEdge(s, "1d", 100, 105, 4).ok).toBe(false); // below the 200-day average
-    expect(testedEdge(s, "1d", 100, 95, 6).ok).toBe(false); // stop only 10 vs 2x ATR = 12
+    expect(testedEdge(s, "1d", 100, 95, 7).ok).toBe(false); // stop only 10 vs 1.5x ATR = 10.5
     expect(testedEdge(s, "1d", 100, 95, 4, "yahoo:EURUSD=X").ok).toBe(false); // forex
   });
 });

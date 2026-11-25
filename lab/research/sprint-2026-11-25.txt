@@ -1,0 +1,58 @@
+# 9434 setups, 78 markets
+
+## Current tested edge, old vs new markets (new markets are a true out-of-sample check)
+EDGE on original markets                             ALL n= 449 win=43.7% avgR=+0.243 t=+3.7 | TRAIN n= 311 win=43.4% avgR=+0.247 t=+3.0 | TEST n= 138 win=44.2% avgR=+0.234 t=+2.0
+EDGE on NEW markets (never seen before)              ALL n= 610 win=43.1% avgR=+0.218 t=+3.9 | TRAIN n= 440 win=43.0% avgR=+0.214 t=+3.4 | TEST n= 170 win=43.5% avgR=+0.228 t=+2.0
+EDGE all                                             ALL n=1059 win=43.3% avgR=+0.229 t=+5.4 | TRAIN n= 751 win=43.1% avgR=+0.227 t=+4.5 | TEST n= 308 win=43.8% avgR=+0.231 t=+2.9
+EDGE with ATR-trail exit instead                     ALL n=1059 win=39.7% avgR=+0.110 t=+3.4 | TRAIN n= 751 win=39.4% avgR=+0.109 t=+2.8 | TEST n= 308 win=40.3% avgR=+0.111 t=+2.0
+
+## Research-queue features inside the edge (keep only if TRAIN and TEST both improve)
+  + 63-day return > 0                                ALL n= 889 win=42.0% avgR=+0.214 t=+4.5 | TRAIN n= 625 win=41.4% avgR=+0.200 t=+3.6 | TEST n= 264 win=43.2% avgR=+0.247 t=+2.7
+  - NOT 63-day return > 0                            ALL n= 170 win=50.6% avgR=+0.305 t=+3.2 | TRAIN n= 126 win=51.6% avgR=+0.365 t=+3.2 | TEST n=  44 win=47.7% avgR=+0.134 t=+0.8
+  + above SMA100                                     ALL n= 974 win=42.4% avgR=+0.210 t=+4.7 | TRAIN n= 684 win=41.5% avgR=+0.192 t=+3.7 | TEST n= 290 win=44.5% avgR=+0.253 t=+3.0
+  - NOT above SMA100                                 ALL n=  85 win=54.1% avgR=+0.439 t=+3.1 | TRAIN n=  67 win=59.7% avgR=+0.589 t=+3.5 | TEST n=  18 win=33.3% avgR=-0.118 t=-0.5
+  + ADX >= 20                                        ALL n= 618 win=44.3% avgR=+0.246 t=+4.4 | TRAIN n= 434 win=44.7% avgR=+0.282 t=+4.2 | TEST n= 184 win=43.5% avgR=+0.161 t=+1.6
+  - NOT ADX >= 20                                    ALL n= 441 win=42.0% avgR=+0.205 t=+3.1 | TRAIN n= 317 win=41.0% avgR=+0.153 t=+2.1 | TEST n= 124 win=44.4% avgR=+0.335 t=+2.4
+  + ADX >= 25                                        ALL n= 332 win=44.6% avgR=+0.276 t=+3.5 | TRAIN n= 223 win=48.0% avgR=+0.391 t=+4.0 | TEST n= 109 win=37.6% avgR=+0.039 t=+0.3
+  - NOT ADX >= 25                                    ALL n= 727 win=42.8% avgR=+0.207 t=+4.1 | TRAIN n= 528 win=41.1% avgR=+0.158 t=+2.7 | TEST n= 199 win=47.2% avgR=+0.336 t=+3.3
+  + volume > 20-bar avg                              ALL n= 499 win=44.1% avgR=+0.244 t=+3.9 | TRAIN n= 351 win=45.9% avgR=+0.289 t=+3.9 | TEST n= 148 win=39.9% avgR=+0.138 t=+1.2
+  - NOT volume > 20-bar avg                          ALL n= 560 win=42.7% avgR=+0.215 t=+3.6 | TRAIN n= 400 win=40.8% avgR=+0.173 t=+2.6 | TEST n= 160 win=47.5% avgR=+0.318 t=+2.7
+  + Donchian(20) breakout                            ALL n= 178 win=49.4% avgR=+0.227 t=+2.5 | TRAIN n= 117 win=48.7% avgR=+0.244 t=+2.2 | TEST n=  61 win=50.8% avgR=+0.195 t=+1.2
+  - NOT Donchian(20) breakout                        ALL n= 881 win=42.1% avgR=+0.229 t=+4.8 | TRAIN n= 634 win=42.1% avgR=+0.224 t=+4.0 | TEST n= 247 win=42.1% avgR=+0.240 t=+2.6
+  + wave-2 depth 0.5-0.786                           ALL n= 394 win=43.7% avgR=+0.193 t=+3.0 | TRAIN n= 269 win=44.6% avgR=+0.209 t=+2.7 | TEST n= 125 win=41.6% avgR=+0.158 t=+1.4
+  - NOT wave-2 depth 0.5-0.786                       ALL n= 665 win=43.2% avgR=+0.250 t=+4.5 | TRAIN n= 482 win=42.3% avgR=+0.238 t=+3.7 | TEST n= 183 win=45.4% avgR=+0.281 t=+2.5
+  + wave-2 depth 0.382-0.618                         ALL n= 549 win=44.6% avgR=+0.245 t=+4.2 | TRAIN n= 378 win=44.2% avgR=+0.266 t=+3.7 | TEST n= 171 win=45.6% avgR=+0.200 t=+2.0
+  - NOT wave-2 depth 0.382-0.618                     ALL n= 510 win=42.0% avgR=+0.211 t=+3.3 | TRAIN n= 373 win=42.1% avgR=+0.188 t=+2.7 | TEST n= 137 win=41.6% avgR=+0.271 t=+2.0
+  + close above wave-1 high                          ALL n=  42 win=35.7% avgR=-0.012 t=-0.1 | TRAIN n=  30 win=40.0% avgR=-0.010 t=-0.1 | TEST n=  12 win=25.0% avgR=-0.017 t=-0.0
+  - NOT close above wave-1 high                      ALL n=1017 win=43.7% avgR=+0.238 t=+5.4 | TRAIN n= 721 win=43.3% avgR=+0.237 t=+4.6 | TEST n= 296 win=44.6% avgR=+0.241 t=+2.9
+  + ATR percentile <= 0.8                            ALL n= 725 win=43.2% avgR=+0.232 t=+4.4 | TRAIN n= 527 win=42.7% avgR=+0.212 t=+3.5 | TEST n= 198 win=44.4% avgR=+0.285 t=+2.7
+  - NOT ATR percentile <= 0.8                        ALL n= 334 win=43.7% avgR=+0.222 t=+3.1 | TRAIN n= 224 win=44.2% avgR=+0.265 t=+2.9 | TEST n= 110 win=42.7% avgR=+0.135 t=+1.1
+  + vol regime <= 1.5 (calm)                         ALL n= 929 win=43.6% avgR=+0.249 t=+5.4 | TRAIN n= 656 win=43.6% avgR=+0.246 t=+4.5 | TEST n= 273 win=43.6% avgR=+0.255 t=+2.9
+  - NOT vol regime <= 1.5 (calm)                     ALL n= 130 win=41.5% avgR=+0.086 t=+0.8 | TRAIN n=  95 win=40.0% avgR=+0.101 t=+0.8 | TEST n=  35 win=45.7% avgR=+0.045 t=+0.2
+
+## Same features on the wider base (daily, long, uptrend, not forex)
+  + 63-day return > 0                                ALL n=1274 win=41.8% avgR=+0.216 t=+5.4 | TRAIN n= 887 win=42.3% avgR=+0.226 t=+4.7 | TEST n= 387 win=40.8% avgR=+0.193 t=+2.6
+  + above SMA100                                     ALL n=1368 win=42.5% avgR=+0.221 t=+5.8 | TRAIN n= 954 win=42.7% avgR=+0.228 t=+5.0 | TEST n= 414 win=42.3% avgR=+0.205 t=+2.9
+  + ADX >= 20                                        ALL n= 858 win=43.4% avgR=+0.234 t=+4.8 | TRAIN n= 606 win=44.1% avgR=+0.258 t=+4.5 | TEST n= 252 win=41.7% avgR=+0.177 t=+2.0
+  + ADX >= 25                                        ALL n= 472 win=42.4% avgR=+0.217 t=+3.3 | TRAIN n= 317 win=45.1% avgR=+0.292 t=+3.6 | TEST n= 155 win=36.8% avgR=+0.065 t=+0.6
+  + volume > 20-bar avg                              ALL n= 728 win=44.4% avgR=+0.262 t=+5.0 | TRAIN n= 513 win=46.8% avgR=+0.335 t=+5.3 | TEST n= 215 win=38.6% avgR=+0.087 t=+1.0
+  + Donchian(20) breakout                            ALL n= 254 win=52.0% avgR=+0.272 t=+3.5 | TRAIN n= 172 win=53.5% avgR=+0.354 t=+3.7 | TEST n=  82 win=48.8% avgR=+0.100 t=+0.8
+  + wave-2 depth 0.5-0.786                           ALL n= 579 win=43.2% avgR=+0.213 t=+3.8 | TRAIN n= 393 win=44.3% avgR=+0.229 t=+3.4 | TEST n= 186 win=40.9% avgR=+0.181 t=+1.8
+  + wave-2 depth 0.382-0.618                         ALL n= 692 win=43.4% avgR=+0.234 t=+4.4 | TRAIN n= 481 win=43.2% avgR=+0.257 t=+3.9 | TEST n= 211 win=43.6% avgR=+0.181 t=+2.0
+  + close above wave-1 high                          ALL n= 252 win=42.9% avgR=+0.104 t=+1.3 | TRAIN n= 166 win=47.6% avgR=+0.208 t=+2.1 | TEST n=  86 win=33.7% avgR=-0.096 t=-0.7
+  + ATR percentile <= 0.8                            ALL n= 978 win=43.3% avgR=+0.250 t=+5.4 | TRAIN n= 705 win=43.7% avgR=+0.259 t=+4.8 | TEST n= 273 win=42.1% avgR=+0.228 t=+2.5
+  + vol regime <= 1.5 (calm)                         ALL n=1294 win=42.8% avgR=+0.240 t=+6.0 | TRAIN n= 902 win=43.8% avgR=+0.262 t=+5.5 | TEST n= 392 win=40.6% avgR=+0.188 t=+2.6
+
+## Looser versions of the edge (more trades?)
+base: daily long uptrend notFX (any setup, any stop) ALL n=1494 win=42.8% avgR=+0.227 t=+6.2 | TRAIN n=1051 win=43.6% avgR=+0.252 t=+5.8 | TEST n= 443 win=41.1% avgR=+0.169 t=+2.5
+base + stop>=2ATR (any setup)                        ALL n=1311 win=43.6% avgR=+0.214 t=+5.7 | TRAIN n= 918 win=44.4% avgR=+0.238 t=+5.3 | TEST n= 393 win=41.7% avgR=+0.157 t=+2.3
+base + Wave 3 (any stop)                             ALL n=1212 win=42.3% avgR=+0.236 t=+5.7 | TRAIN n= 861 win=42.2% avgR=+0.234 t=+4.8 | TEST n= 351 win=42.7% avgR=+0.240 t=+3.1
+base + Wave 3 + stop>=1.5ATR                         ALL n=1158 win=42.9% avgR=+0.238 t=+5.7 | TRAIN n= 824 win=42.5% avgR=+0.225 t=+4.6 | TEST n= 334 win=44.0% avgR=+0.271 t=+3.4
+base, setup = Correction complete                    ALL n=  39 win=46.2% avgR=+0.325 t=+1.4 | TRAIN n=  32 win=46.9% avgR=+0.429 t=+1.6 | TEST n=   7 win=42.9% avgR=-0.152 t=-0.4
+base, setup = Wave 5                                 ALL n= 241 win=44.8% avgR=+0.164 t=+2.0 | TRAIN n= 158 win=50.6% avgR=+0.309 t=+3.0 | TEST n=  83 win=33.7% avgR=-0.112 t=-0.8
+4h long, daily uptrend (htf long) + ema200, notFX, stop>=2ATR ALL n= 264 win=31.1% avgR=-0.106 t=-1.3 | TRAIN n= 178 win=35.4% avgR=+0.038 t=+0.4 | TEST n=  86 win=22.1% avgR=-0.403 t=-3.5
+
+## How often does it fire? Trades per year per market (daily setups, over each market's history)
+EDGE                   1059 trades over 765 market-years = 1.38 per market per year -> about 34.6 per month across ~300 non-forex markets
+base + stop>=2ATR      1311 trades over 765 market-years = 1.71 per market per year -> about 42.8 per month across ~300 non-forex markets
+base                   1494 trades over 765 market-years = 1.95 per market per year -> about 48.8 per month across ~300 non-forex markets
