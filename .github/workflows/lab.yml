@@ -32,3 +32,23 @@ jobs:
       - run: node lab/dist/run.mjs ${{ matrix.group }} lab-${{ matrix.group }}.jsonl
       - uses: actions/upload-artifact@v4
         with: { name: "lab-${{ matrix.group }}", path: "lab-${{ matrix.group }}.jsonl" }
+  collect:
+    needs: replay
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: results }
+      - name: Analyse and save to the lab-data branch
+        run: |
+          python3 lab/analyze.py results > report.txt || true
+          mkdir -p /tmp/out && cp report.txt /tmp/out/ && cat results/*/*.jsonl | gzip -9 > /tmp/out/setups.jsonl.gz
+          git config user.name "viko-lab" && git config user.email "lab@viko.local"
+          git fetch origin lab-data || true
+          git switch --orphan lab-data-new
+          rm -rf ./* .github && cp /tmp/out/* . && mkdir -p runs && cp report.txt runs/${{ github.run_id }}.txt
+          git add -A && git commit -qm "Lab run ${{ github.run_id }}"
+          git push -f origin HEAD:lab-data
