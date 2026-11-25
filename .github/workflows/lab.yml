@@ -1,0 +1,34 @@
+name: Viko lab
+# Replays Viko's engine on real price history for many markets and timeframes, in parallel.
+# Results are uploaded as an artifact (one JSON line per setup) for analysis.
+on:
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: "Market groups, comma separated"
+        default: "majors,alts,fx,commod,indices,stocks"
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      groups: ${{ steps.g.outputs.groups }}
+    steps:
+      - id: g
+        run: echo "groups=$(echo '${{ inputs.groups }}' | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+  replay:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJson(needs.plan.outputs.groups) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: cd app && npm ci --silent
+      - run: npx --prefix app esbuild lab/run.ts --bundle --platform=node --format=esm --outfile=lab/dist/run.mjs
+      - run: node lab/dist/run.mjs ${{ matrix.group }} lab-${{ matrix.group }}.jsonl
+      - uses: actions/upload-artifact@v4
+        with: { name: "lab-${{ matrix.group }}", path: "lab-${{ matrix.group }}.jsonl" }
