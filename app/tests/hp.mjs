@@ -8,7 +8,7 @@ const srv = createServer((q, r) => { let p = join(dist, q.url.split("?")[0]); if
 const now = Date.now(), iso = (ms) => new Date(ms).toISOString();
 const mk = (symbol, label, market, tf, dir, score, e, verdict = "APPROVED", triggered = true) => { const st = dir === "long" ? e * 0.98 : e * 1.02, t1 = dir === "long" ? e * 1.05 : e * 0.95, t2 = dir === "long" ? e * 1.08 : e * 0.92;
   return { symbol, label, market, tf, price: e, candle_t: Math.floor(now / 1000) - 300, scanned_at: iso(now - 4 * 60e3), verdict, dir, score, hard_fail: false, triggered, rr1: 2.5, news_warn: symbol === "yahoo:EURUSD=X" ? `CPI (USD) is due ${iso(now + 2 * 3600e3)}` : null,
-    setup: { name: "Wave 3 entry", degree: "Minor", dir, entry: e, stop: st, invalidation: st, target1: t1, target2: t2, score, verdict, hardFail: false, triggered, rr1: 2.5, rr2: 4, expectBars: 6 } }; };
+    setup: { name: "Wave 3 entry", degree: "Minor", dir, entry: e, stop: st, invalidation: st, target1: t1, target2: t2, score, verdict, hardFail: false, triggered, rr1: 2.5, rr2: 4, expectBars: 6, edge: { ok: !String(symbol).endsWith("=X") && !String(symbol).startsWith("crypto:"), why: "test" } } }; };
 const rows = [mk("yahoo:KO", "KO", "Stocks", "1h", "long", 96, 70), mk("yahoo:KO", "KO", "Stocks", "4h", "long", 88, 70), mk("yahoo:GC=F", "Gold", "Commodities", "4h", "long", 92, 3670), mk("crypto:SOLUSDT", "SOL/USDT", "Crypto", "15m", "short", 84, 140),
   mk("yahoo:EURUSD=X", "EUR/USD", "Forex", "1h", "short", 81, 1.09), mk("yahoo:NVDA", "NVDA", "Stocks", "1d", "long", 78, 165, "WATCH"), mk("crypto:ETHUSDT", "ETH/USDT", "Crypto", "2h", "long", 90, 1775, "WATCH", false), mk("yahoo:SPY", "SPY", "Indices", "1w", "long", 74, 723, "WATCH")];
 // synthetic candles for the live scan

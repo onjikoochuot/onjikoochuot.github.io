@@ -8,8 +8,8 @@ const srv = createServer((q, r) => { let p = join(dist, q.url.split("?")[0]); if
 const now = Date.now(), iso = (ms) => new Date(ms).toISOString();
 const mk = (symbol, label, market, tf, dir, score, e, trig) => { const st = e * 0.97, t1 = e * 1.06, t2 = e * 1.1, entry = trig ? e : e * 1.01;
   return { symbol, label, market, tf, price: e, candle_t: Math.floor(now / 1000) - 300, scanned_at: iso(now - 4 * 60e3), verdict: trig ? "APPROVED" : "WATCH", dir, score, hard_fail: false, triggered: trig, rr1: 2, news_warn: null,
-    setup: { name: "Wave 3 entry", degree: "Minor", dir, entry, stop: st, invalidation: st, target1: t1, target2: t2, score, verdict: trig ? "APPROVED" : "WATCH", hardFail: false, triggered: trig, rr1: 2, rr2: 3.3, expectBars: 6 } }; };
-const rows = [mk("crypto:SOLUSDT", "SOL/USDT", "Crypto", "1h", "long", 86, 100, false), mk("yahoo:GC=F", "Gold", "Commodities", "1h", "long", 88, 4000, true)];
+    setup: { name: "Wave 3 entry", degree: "Minor", dir, entry, stop: st, invalidation: st, target1: t1, target2: t2, score, verdict: trig ? "APPROVED" : "WATCH", hardFail: false, triggered: trig, rr1: 2, rr2: 3.3, expectBars: 6, edge: { ok: !String(symbol).endsWith("=X") && !String(symbol).startsWith("crypto:"), why: "test" } } }; };
+const rows = [mk("yahoo:AAPL", "AAPL", "Stocks", "1h", "long", 86, 100, false), mk("yahoo:GC=F", "Gold", "Commodities", "1h", "long", 88, 4000, true)];
 const sent = [];
 const pending = [];
 const b = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
@@ -33,7 +33,7 @@ await pg.route(/supabase\.co/, (route) => {
   return json({ ok: true, rows: [], quotes: {}, candles: [], plans: [], positions: [], events: [] });
 });
 await pg.goto("http://localhost:4333/#top"); await pg.waitForTimeout(1500);
-const solRow = pg.locator(".opp", { hasText: "SOL/USDT" });
+const solRow = pg.locator(".opp", { hasText: "AAPL" });
 console.log("SOL buttons:", await solRow.locator(".opp-act").innerText());
 await solRow.getByRole("button", { name: "Paper (wait)" }).click(); await pg.waitForTimeout(400);
 console.log("default mode:", await pg.locator(".wto [role=radio][aria-checked=true]").first().innerText(), "| level:", await pg.locator(".wto input[aria-label='Entry price to wait for']").inputValue());

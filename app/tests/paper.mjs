@@ -8,8 +8,8 @@ const srv = createServer((q, r) => { let p = join(dist, q.url.split("?")[0]); if
 const now = Date.now(), iso = (ms) => new Date(ms).toISOString();
 const mk = (symbol, label, market, tf, dir, score, e) => { const st = dir === "long" ? e * 0.97 : e * 1.03, t1 = dir === "long" ? e * 1.06 : e * 0.94, t2 = dir === "long" ? e * 1.1 : e * 0.9;
   return { symbol, label, market, tf, price: e, candle_t: Math.floor(now / 1000) - 300, scanned_at: iso(now - 4 * 60e3), verdict: "APPROVED", dir, score, hard_fail: false, triggered: true, rr1: 2, news_warn: null,
-    setup: { name: "Wave 3 entry", degree: "Minor", dir, entry: e, stop: st, invalidation: st, target1: t1, target2: t2, score, verdict: "APPROVED", hardFail: false, triggered: true, rr1: 2, rr2: 3.3, expectBars: 6 } }; };
-const rows = [mk("yahoo:TGT", "TGT", "Stocks", "30m", "long", 93, 168.78), mk("yahoo:USDSGD=X", "USD/SGD", "Forex", "1h", "long", 87, 1.2917), mk("crypto:EIGENUSDT", "EIGEN/USDT", "Crypto", "1h", "short", 85, 0.1154)];
+    setup: { name: "Wave 3 entry", degree: "Minor", dir, entry: e, stop: st, invalidation: st, target1: t1, target2: t2, score, verdict: "APPROVED", hardFail: false, triggered: true, rr1: 2, rr2: 3.3, expectBars: 6, edge: { ok: !String(symbol).endsWith("=X") && !String(symbol).startsWith("crypto:"), why: "test" } } }; };
+const rows = [mk("yahoo:TGT", "TGT", "Stocks", "30m", "long", 93, 168.78), mk("yahoo:HD", "HD", "Stocks", "1d", "long", 87, 405.2), mk("yahoo:GC=F", "Gold", "Commodities", "1d", "long", 85, 4012.5)];
 const opened = [];
 const b = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
 const errs = [];
