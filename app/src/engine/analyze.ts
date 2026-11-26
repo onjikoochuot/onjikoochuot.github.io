@@ -389,7 +389,9 @@ export function testedEdge(s: Pick<Setup, "dir" | "name" | "stop">, tf: Tf, clos
   return { ok: true, why: `Inside Viko's tested edge: over ${EDGE.trades} past trades like this, ${Math.round(EDGE.winRate * 100)}% won and the average was +${EDGE.avgR.toFixed(2)}R after costs.` };
 }
 
-export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[], symbol?: string): Analysis {
+/** Options for research: which wave degrees to count (default: the three live degrees). */
+export type AnalyzeOpts = { degrees?: { key: string; name: string; mult: number }[] };
+export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[], symbol?: string, opts: AnalyzeOpts = {}): Analysis {
   const ind = computeIndicators(c);
   const mc = mirror(c);
   const indM = computeIndicators(mc);
@@ -398,7 +400,7 @@ export function analyze(c: Candle[], tf: Tf, htfCandles?: Candle[], symbol?: str
   const useVol = wy.volumeUsable;
   const setups: Setup[] = [];
   const pivotsByDegree: Record<string, Pivot[]> = {};
-  for (const d of DEGREES) {
+  for (const d of opts.degrees ?? DEGREES) {
     const pvUp = monowaves(c, ind.atr, d.mult);
     pivotsByDegree[d.key] = pvUp;
     const base = { atr: ind.atr, useVol, wy, htf: htf.dir, degreeName: d.name, degreeKey: d.key };

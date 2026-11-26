@@ -3,6 +3,7 @@
 // target 1, trailing stop, target 2, time limit) after fees and slippage. Runs on GitHub Actions,
 // which can download market data. Usage: node lab/dist/run.js <group> <out.jsonl>
 import { analyze } from "../app/src/engine/analyze";
+import type { Analysis } from "../app/src/engine/types";
 import { trailStop } from "../app/src/engine/trail";
 import { costsFor, marketFill } from "../app/src/engine/costs";
 import type { Candle, Tf } from "../app/src/engine/types";
@@ -130,6 +131,50 @@ function manage(c: Candle[], i: number, s: { dir: "long" | "short"; stop: number
   return { rNet: pnl / risk, t1First, how, bars: exitI - i };
 }
 
+// ---------- Wave-counter research (Nov 26 2026) ----------
+const MINUTE = [{ key: "minute", name: "Minute degree", mult: 1.5 }]; // sub-waves: the 1.5×ATR swing size the user's guide suggests
+const NEXT_DEG: Record<string, string> = { "Minor degree": "intermediate", "Intermediate degree": "primary" };
+
+/** Big-picture checks for a wave-3 buy: does wave 1 start at the 3-month low, do other degrees agree, is the next degree up trending? */
+function bigPicture(a: Analysis, s: any, win: Candle[]) {
+  if (s.name !== "Wave 3 entry" || s.dir !== "long") return { w1From3mLow: null, degreesAgree: null, higherDegUp: null };
+  const n = win.length - 1;
+  const p0 = s.labels.find((l: any) => l.text === "0");
+  const low63 = Math.min(...win.slice(Math.max(0, n - 63), n + 1).map((k) => k.l));
+  const w1From3mLow = p0 ? p0.p <= low63 * 1.0000001 : null;
+  const degreesAgree = new Set(a.setups.filter((x) => x.name === "Wave 3 entry" && x.dir === "long" && !x.hardFail).map((x) => x.degree)).size;
+  const hk = NEXT_DEG[s.degree];
+  let higherDegUp: boolean | null = null;
+  if (hk && a.pivotsByDegree[hk]) {
+    const lows = a.pivotsByDegree[hk].filter((p) => !p.provisional && p.kind === "L");
+    if (lows.length >= 2) higherDegUp = lows[lows.length - 1].p > lows[lows.length - 2].p;
+  }
+  return { w1From3mLow, degreesAgree, higherDegUp };
+}
+
+/** Wave-5 divergence reversal (buy): five waves down just ended with RSI not confirming the last low, and price turns up. */
+function w5Divergence(a: Analysis, win: Candle[]) {
+  const n = win.length - 1, atr = a.ind.atr[n], rsi = a.ind.rsi;
+  for (const deg of ["minor", "intermediate"]) {
+    const pv = a.pivotsByDegree[deg] ?? [];
+    const L = pv.length;
+    if (L < 7 || !pv[L - 1].provisional || pv[L - 1].kind !== "H") continue;
+    const [H0, L1, H2, L3, H4, L5] = pv.slice(L - 7, L - 1);
+    if (!(H0.kind === "H" && L1.kind === "L" && H2.kind === "H" && L3.kind === "L" && H4.kind === "H" && L5.kind === "L")) continue;
+    if (!(L3.p < L1.p && L5.p < L3.p && H2.p < H0.p && H4.p < H2.p && H4.p < L1.p)) continue; // falling impulse, wave 4 not overlapping wave 1
+    const w1 = H0.p - L1.p, w3 = H2.p - L3.p, w5 = H4.p - L5.p;
+    if (w3 < w1 && w3 < w5) continue; // wave 3 is never the shortest
+    if (!(rsi[L5.i] > rsi[L3.i])) continue; // bullish divergence: lower price low, higher RSI low
+    const trig = win[L5.i].h;
+    if (!(win[n].c > trig && win[n - 1].c <= trig)) continue; // fresh close above the wave-5 low candle's high
+    const stop = L5.p - 0.25 * atr, t1 = H4.p, t2 = H2.p, entry = win[n].c;
+    const rr1 = (t1 - entry) / (entry - stop);
+    if (!(rr1 >= 1.5)) continue;
+    return { dir: "long" as const, stop, target1: t1, target2: t2, rr1, degree: deg, rsiGap: +(rsi[L5.i] - rsi[L3.i]).toFixed(1), aboveEma200: entry > a.ind.ema200[n], stopAtr: +((entry - stop) / atr).toFixed(2) };
+  }
+  return null;
+}
+
 async function main() {
   const [group, out] = process.argv.slice(2);
   const syms = process.env.LAB_SYMS?.split(",") ?? GROUPS[group]; if (!syms) throw new Error("unknown group " + group);
@@ -139,13 +184,31 @@ async function main() {
     let c: Candle[] = [];
     try { c = sym.startsWith("crypto:") ? await binance(sym.slice(7), tf, tf === "1d" ? 3000 : 4000) : await yahoo(sym.slice(6), tf); } catch (e) { console.log(`${sym} ${tf}: ${(e as Error).message}`); continue; }
     if (c.length < (tf === "1w" ? 260 : 400)) { console.log(`${sym} ${tf}: only ${c.length} candles, skipped`); continue; }
-    let busyUntil = -1, n = 0;
+    let busyUntil = -1, n = 0, busyMin = -1, busyW5 = -1;
     const seen: (string | null)[] = []; // key of the tradeable setup at each analysed bar (count-stability feature)
     const keyOf = (x: { dir: string; name: string; labels: { text: string; i: number }[] }) => `${x.dir}|${x.name}|${x.labels.map((l) => l.text + l.i).join(",")}`;
     for (let i = tf === "1w" ? 220 : 300; i < c.length - 2; i++) {
-      if (i <= busyUntil) { seen[i] = null; continue; }
+      const research = tf === "1d" && !sym.endsWith("=X");
+      if (i <= busyUntil && !(research && (i > busyMin || i > busyW5))) { seen[i] = null; continue; }
       const win = c.slice(Math.max(0, i + 1 - WINDOW), i + 1);
       const a = analyze(win, tf, undefined, sym);
+      if (research) {
+        const rec = (extraRec: any, m: any) => appendFileSync(out, JSON.stringify({ sym, kind: kindOf(sym), tf, t: c[i].t, ...extraRec, ...m }) + "\n");
+        // Variant 1: sub-wave (Minute degree) count, traded on its own
+        if (i > busyMin) {
+          const am = analyze(win, tf, undefined, sym, { degrees: MINUTE });
+          const sm = am.setups.find((x) => x.triggered && !x.hardFail && x.verdict !== "NO TRADE" && x.rr1 >= 1.5);
+          if (sm) { const mm = manage(c, i, sm, sym, MAX_HOLD[tf]); const at = am.ind.atr[am.ind.atr.length - 1];
+            if (mm) { rec({ variant: "minute", dir: sm.dir, name: sm.name, degree: sm.degree, score: sm.score, edge: sm.edge?.ok ?? null, rr1: +sm.rr1.toFixed(2), stopAtr: at ? +(Math.abs(c[i].c - sm.stop) / at).toFixed(2) : null, ema200: sm.checks.find((k) => k.id === "i-ema200")?.pass ?? null }, mm); busyMin = i + Math.max(1, Math.min(mm.bars, MAX_HOLD[tf])); } }
+        }
+        // Variant 2: wave-5 divergence reversal (buy)
+        if (i > busyW5) {
+          const w5 = w5Divergence(a, win);
+          if (w5) { const mm = manage(c, i, w5, sym, MAX_HOLD[tf]);
+            if (mm) { rec({ variant: "w5div", name: "Wave-5 divergence reversal", ...w5 }, mm); busyW5 = i + Math.max(1, Math.min(mm.bars, MAX_HOLD[tf])); } }
+        }
+      }
+      if (i <= busyUntil) { seen[i] = null; continue; }
       // every setup Viko would show as tradeable now (not only approved), so the lab can learn which features matter
       const s = a.setups.find((x) => x.triggered && !x.hardFail && x.verdict !== "NO TRADE" && x.rr1 >= 1.5);
       // the same count (direction, setup and wave points) visible on the previous bars, ignoring the trigger
@@ -200,7 +263,7 @@ async function main() {
           altSharp2Side4 = sharp2 && side4;
         }
       }
-      const extra = { fibCluster, fibClusterT1, w2TimeRatio, brokeLH, altSharp2Side4, ret63, aboveSma100: sma100 ? cl > sma100 : null, adx: adx(win), volRatio, donBreak, w2Depth, brokeW1, atrPct: atrRel, volRegime: vol20r, rNetAtr: manageAtr(c, i, s, sym, MAX_HOLD[tf], atr ?? 0), stable1, stable2, dollarVol20: +(c.slice(Math.max(0, j - 20), j).reduce((x, b) => x + b.v * b.c, 0) / Math.min(20, j)).toFixed(0), weekday: new Date(c[i].t * 1000).getUTCDay() };
+      const extra = { ...bigPicture(a, s, win), fibCluster, fibClusterT1, w2TimeRatio, brokeLH, altSharp2Side4, ret63, aboveSma100: sma100 ? cl > sma100 : null, adx: adx(win), volRatio, donBreak, w2Depth, brokeW1, atrPct: atrRel, volRegime: vol20r, rNetAtr: manageAtr(c, i, s, sym, MAX_HOLD[tf], atr ?? 0), stable1, stable2, dollarVol20: +(c.slice(Math.max(0, j - 20), j).reduce((x, b) => x + b.v * b.c, 0) / Math.min(20, j)).toFixed(0), weekday: new Date(c[i].t * 1000).getUTCDay() };
       appendFileSync(out, JSON.stringify({
         sym, kind: kindOf(sym), tf, t: c[i].t, dir: s.dir, name: s.name, pattern: s.pattern, degree: s.degree, score: s.score, verdict: s.verdict, edge: s.edge?.ok ?? null, rr1: +s.rr1.toFixed(2), rr2: +s.rr2.toFixed(2),
         stopPct: +(Math.abs(c[i].c - s.stop) / c[i].c * 100).toFixed(3), stopAtr: atr ? +(Math.abs(c[i].c - s.stop) / atr).toFixed(2) : null,
