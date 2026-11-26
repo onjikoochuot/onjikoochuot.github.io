@@ -1,0 +1,221 @@
+# Viko lab: 9652 setups, 207 market-timeframe series
+ALL                                n= 9652  win= 33.8%  avgR=-0.017  t= -1.2  totalR=  -164.7
+  verdict APPROVED                 n=  996  win= 43.5%  avgR=+0.257  t= +5.7  totalR=  +255.8
+  verdict WATCH                    n= 8656  win= 32.7%  avgR=-0.049  t= -3.3  totalR=  -420.5
+
+## By score band
+80-89                              n= 1929  win= 32.8%  avgR=+0.006  t= +0.2  totalR=   +12.3
+70-79                              n= 3752  win= 33.7%  avgR=-0.013  t= -0.6  totalR=   -49.7
+60-69                              n= 2741  win= 35.4%  avgR=-0.016  t= -0.6  totalR=   -44.3
+<60                                n=  912  win= 33.9%  avgR=-0.060  t= -1.4  totalR=   -55.1
+90+                                n=  318  win= 27.7%  avgR=-0.087  t= -1.1  totalR=   -27.8
+
+## By market type
+stock/index                        n= 2826  win= 36.6%  avgR=+0.053  t= +2.0  totalR=  +150.7
+major                              n=  741  win= 35.0%  avgR=+0.043  t= +0.8  totalR=   +31.7
+commod                             n= 1679  win= 32.6%  avgR=-0.003  t= -0.1  totalR=    -4.9
+alt                                n= 1689  win= 34.9%  avgR=-0.021  t= -0.6  totalR=   -35.2
+fx                                 n= 2717  win= 30.7%  avgR=-0.113  t= -4.3  totalR=  -306.9
+
+## By timeframe
+1d                                 n= 3576  win= 37.5%  avgR=+0.040  t= +1.8  totalR=  +142.4
+4h                                 n= 1427  win= 33.5%  avgR=-0.036  t= -1.0  totalR=   -51.7
+1h                                 n= 3367  win= 31.2%  avgR=-0.046  t= -1.9  totalR=  -154.1
+15m                                n= 1282  win= 31.0%  avgR=-0.079  t= -1.8  totalR=  -101.3
+
+## By market type x timeframe
+major 4h                           n=  217  win= 38.2%  avgR=+0.119  t= +1.3  totalR=   +25.8
+stock/index 4h                     n=  223  win= 36.3%  avgR=+0.097  t= +1.0  totalR=   +21.7
+major 15m                          n=  159  win= 35.2%  avgR=+0.095  t= +0.8  totalR=   +15.1
+major 1d                           n=  179  win= 38.0%  avgR=+0.090  t= +0.8  totalR=   +16.2
+commod 15m                         n=  209  win= 31.1%  avgR=+0.086  t= +0.7  totalR=   +18.0
+stock/index 1d                     n= 1777  win= 38.4%  avgR=+0.067  t= +2.1  totalR=  +118.2
+alt 1h                             n=  307  win= 35.2%  avgR=+0.031  t= +0.4  totalR=    +9.5
+stock/index 1h                     n=  663  win= 33.3%  avgR=+0.022  t= +0.4  totalR=   +14.7
+commod 1d                          n=  570  win= 35.1%  avgR=+0.020  t= +0.4  totalR=   +11.5
+fx 1d                              n=  328  win= 37.8%  avgR=+0.010  t= +0.1  totalR=    +3.1
+alt 1d                             n=  722  win= 36.8%  avgR=-0.009  t= -0.2  totalR=    -6.7
+stock/index 15m                    n=  163  win= 30.7%  avgR=-0.024  t= -0.2  totalR=    -3.9
+commod 1h                          n=  693  win= 31.3%  avgR=-0.031  t= -0.6  totalR=   -21.4
+alt 4h                             n=  375  win= 33.9%  avgR=-0.056  t= -0.9  totalR=   -21.1
+alt 15m                            n=  285  win= 31.2%  avgR=-0.059  t= -0.7  totalR=   -16.9
+commod 4h                          n=  207  win= 31.9%  avgR=-0.063  t= -0.7  totalR=   -13.0
+fx 1h                              n= 1518  win= 29.8%  avgR=-0.087  t= -2.4  totalR=  -131.4
+major 1h                           n=  186  win= 28.0%  avgR=-0.137  t= -1.3  totalR=   -25.5
+fx 4h                              n=  405  win= 29.9%  avgR=-0.161  t= -2.6  totalR=   -65.1
+fx 15m                             n=  466  win= 29.4%  avgR=-0.244  t= -3.8  totalR=  -113.5
+
+## By setup
+Correction complete, rejoin the trend n=  387  win= 37.7%  avgR=+0.013  t= +0.2  totalR=    +5.1
+Wave 5 entry                       n= 1555  win= 39.0%  avgR=-0.010  t= -0.3  totalR=   -16.0
+Wave 3 entry                       n= 7575  win= 32.6%  avgR=-0.018  t= -1.1  totalR=  -138.1
+Impulse complete, reversal         n=  135  win= 31.1%  avgR=-0.115  t= -0.9  totalR=   -15.6
+
+## By direction
+long                               n= 5063  win= 34.9%  avgR=+0.014  t= +0.7  totalR=   +69.2
+short                              n= 4589  win= 32.7%  avgR=-0.051  t= -2.5  totalR=  -233.9
+
+## By higher-timeframe trend agreement
+HTF unclear                        n= 2260  win= 34.8%  avgR=+0.005  t= +0.2  totalR=   +12.2
+with HTF                           n= 5309  win= 33.8%  avgR=-0.023  t= -1.2  totalR=  -123.5
+against HTF                        n= 2083  win= 32.8%  avgR=-0.026  t= -0.8  totalR=   -53.3
+
+## By Wyckoff phase
+accumulation E                     n= 1210  win= 35.5%  avgR=+0.021  t= +0.5  totalR=   +25.1
+accumulation D                     n=  839  win= 35.6%  avgR=+0.017  t= +0.4  totalR=   +14.4
+distribution A                     n= 1969  win= 32.1%  avgR=-0.004  t= -0.1  totalR=    -7.0
+accumulation A                     n= 1828  win= 33.9%  avgR=-0.013  t= -0.4  totalR=   -24.6
+accumulation B                     n= 1010  win= 34.9%  avgR=-0.020  t= -0.5  totalR=   -20.2
+distribution B                     n= 1110  win= 33.2%  avgR=-0.039  t= -1.0  totalR=   -43.7
+None None                          n= 1160  win= 33.5%  avgR=-0.061  t= -1.6  totalR=   -70.3
+accumulation C                     n=  526  win= 33.3%  avgR=-0.073  t= -1.3  totalR=   -38.5
+
+## By exit
+t2                                 n=  500  win=100.0%  avgR=+2.789  t=+66.4  totalR= +1394.7
+trail-profit                       n= 1697  win= 99.9%  avgR=+1.761  t=+97.8  totalR= +2987.6
+time                               n= 1381  win= 77.4%  avgR=+0.764  t=+26.7  totalR= +1055.7
+trail                              n= 1342  win=  0.1%  avgR=-0.419  t=-64.7  totalR=  -562.8
+stop                               n= 4732  win=  0.0%  avgR=-1.065  t=-944.9  totalR= -5039.8
+
+## By symbol
+yahoo:AMD                          n=   53  win= 47.2%  avgR=+0.457  t= +2.0  totalR=   +24.2
+yahoo:^HSI                         n=   63  win= 50.8%  avgR=+0.357  t= +2.0  totalR=   +22.5
+yahoo:ADBE                         n=   43  win= 51.2%  avgR=+0.353  t= +1.7  totalR=   +15.2
+yahoo:BAC                          n=   48  win= 47.9%  avgR=+0.338  t= +1.6  totalR=   +16.2
+yahoo:V                            n=   40  win= 45.0%  avgR=+0.335  t= +1.5  totalR=   +13.4
+yahoo:COST                         n=   50  win= 42.0%  avgR=+0.288  t= +1.4  totalR=   +14.4
+yahoo:BZ=F                         n=   47  win= 48.9%  avgR=+0.264  t= +1.5  totalR=   +12.4
+yahoo:TSLA                         n=  125  win= 40.8%  avgR=+0.262  t= +1.9  totalR=   +32.8
+yahoo:NFLX                         n=   56  win= 33.9%  avgR=+0.207  t= +0.9  totalR=   +11.6
+yahoo:LLY                          n=   44  win= 40.9%  avgR=+0.191  t= +0.9  totalR=    +8.4
+yahoo:AVGO                         n=   52  win= 40.4%  avgR=+0.176  t= +0.9  totalR=    +9.1
+yahoo:^NDX                         n=  127  win= 41.7%  avgR=+0.172  t= +1.4  totalR=   +21.8
+yahoo:ORCL                         n=   49  win= 38.8%  avgR=+0.154  t= +0.7  totalR=    +7.5
+yahoo:GOOGL                        n=   52  win= 44.2%  avgR=+0.150  t= +0.9  totalR=    +7.8
+crypto:ETHUSDT                     n=  147  win= 40.8%  avgR=+0.144  t= +1.2  totalR=   +21.2
+crypto:DOGEUSDT                    n=  136  win= 41.2%  avgR=+0.136  t= +1.2  totalR=   +18.5
+yahoo:GC=F                         n=  255  win= 36.5%  avgR=+0.133  t= +1.3  totalR=   +34.0
+yahoo:XOM                          n=   45  win= 44.4%  avgR=+0.125  t= +0.7  totalR=    +5.6
+yahoo:^GDAXI                       n=  160  win= 38.1%  avgR=+0.102  t= +0.9  totalR=   +16.3
+yahoo:CRM                          n=   48  win= 41.7%  avgR=+0.097  t= +0.5  totalR=    +4.6
+crypto:SOLUSDT                     n=  147  win= 33.3%  avgR=+0.088  t= +0.7  totalR=   +12.9
+yahoo:PA=F                         n=   58  win= 31.0%  avgR=+0.074  t= +0.3  totalR=    +4.3
+yahoo:AMZN                         n=  137  win= 32.8%  avgR=+0.068  t= +0.5  totalR=    +9.3
+crypto:BNBUSDT                     n=  151  win= 35.8%  avgR=+0.067  t= +0.6  totalR=   +10.1
+yahoo:^N225                        n=  143  win= 30.8%  avgR=+0.063  t= +0.5  totalR=    +9.0
+yahoo:CL=F                         n=  275  win= 32.7%  avgR=+0.051  t= +0.6  totalR=   +14.0
+yahoo:WMT                          n=   49  win= 42.9%  avgR=+0.049  t= +0.3  totalR=    +2.4
+yahoo:META                         n=  130  win= 34.6%  avgR=+0.047  t= +0.4  totalR=    +6.2
+crypto:BTCUSDT                     n=  152  win= 35.5%  avgR=+0.041  t= +0.3  totalR=    +6.2
+yahoo:AAPL                         n=  122  win= 35.2%  avgR=+0.038  t= +0.3  totalR=    +4.6
+yahoo:HD                           n=   40  win= 37.5%  avgR=+0.037  t= +0.2  totalR=    +1.5
+crypto:NEARUSDT                    n=  149  win= 33.6%  avgR=+0.029  t= +0.2  totalR=    +4.3
+yahoo:JNJ                          n=   51  win= 35.3%  avgR=+0.014  t= +0.1  totalR=    +0.7
+yahoo:^GSPC                        n=  145  win= 33.8%  avgR=+0.007  t= +0.1  totalR=    +1.1
+crypto:ADAUSDT                     n=  154  win= 33.1%  avgR=+0.002  t= +0.0  totalR=    +0.3
+yahoo:^RUT                         n=   58  win= 31.0%  avgR=-0.001  t= -0.0  totalR=    -0.1
+yahoo:USDCAD=X                     n=  278  win= 34.9%  avgR=-0.009  t= -0.1  totalR=    -2.6
+yahoo:KC=F                         n=   53  win= 35.8%  avgR=-0.013  t= -0.1  totalR=    -0.7
+crypto:ATOMUSDT                    n=  158  win= 34.2%  avgR=-0.017  t= -0.2  totalR=    -2.6
+yahoo:^NSEI                        n=   48  win= 37.5%  avgR=-0.018  t= -0.1  totalR=    -0.9
+yahoo:SI=F                         n=  261  win= 31.4%  avgR=-0.025  t= -0.3  totalR=    -6.5
+crypto:AVAXUSDT                    n=  155  win= 32.3%  avgR=-0.036  t= -0.3  totalR=    -5.6
+yahoo:GBPUSD=X                     n=  351  win= 33.6%  avgR=-0.041  t= -0.5  totalR=   -14.6
+crypto:DOTUSDT                     n=  140  win= 36.4%  avgR=-0.054  t= -0.5  totalR=    -7.6
+yahoo:NG=F                         n=  273  win= 31.9%  avgR=-0.054  t= -0.7  totalR=   -14.9
+yahoo:^DJI                         n=  140  win= 35.0%  avgR=-0.058  t= -0.5  totalR=    -8.1
+yahoo:MSFT                         n=  122  win= 32.8%  avgR=-0.058  t= -0.5  totalR=    -7.1
+yahoo:USDCHF=X                     n=  342  win= 31.9%  avgR=-0.062  t= -0.9  totalR=   -21.3
+yahoo:PL=F                         n=   65  win= 27.7%  avgR=-0.063  t= -0.4  totalR=    -4.1
+yahoo:NVDA                         n=  123  win= 31.7%  avgR=-0.064  t= -0.5  totalR=    -7.9
+yahoo:PG                           n=   47  win= 38.3%  avgR=-0.077  t= -0.5  totalR=    -3.6
+crypto:LINKUSDT                    n=  178  win= 29.8%  avgR=-0.078  t= -0.7  totalR=   -13.9
+yahoo:ZW=F                         n=   49  win= 32.7%  avgR=-0.082  t= -0.5  totalR=    -4.0
+yahoo:NZDUSD=X                     n=  378  win= 30.2%  avgR=-0.087  t= -1.2  totalR=   -32.9
+yahoo:AUDUSD=X                     n=  361  win= 30.7%  avgR=-0.101  t= -1.3  totalR=   -36.4
+yahoo:ZC=F                         n=   45  win= 31.1%  avgR=-0.101  t= -0.6  totalR=    -4.6
+yahoo:UNH                          n=   45  win= 35.6%  avgR=-0.109  t= -0.6  totalR=    -4.9
+yahoo:HG=F                         n=  298  win= 29.5%  avgR=-0.117  t= -1.5  totalR=   -34.8
+crypto:LTCUSDT                     n=  144  win= 33.3%  avgR=-0.117  t= -1.1  totalR=   -16.9
+crypto:XRPUSDT                     n=  144  win= 29.2%  avgR=-0.130  t= -1.3  totalR=   -18.8
+yahoo:JPM                          n=   46  win= 32.6%  avgR=-0.142  t= -0.9  totalR=    -6.5
+yahoo:^STOXX50E                    n=   54  win= 33.3%  avgR=-0.153  t= -1.0  totalR=    -8.3
+yahoo:EURUSD=X                     n=  354  win= 28.2%  avgR=-0.175  t= -2.4  totalR=   -62.0
+yahoo:EURJPY=X                     n=  329  win= 29.5%  avgR=-0.180  t= -2.6  totalR=   -59.1
+yahoo:PEP                          n=   51  win= 33.3%  avgR=-0.217  t= -1.5  totalR=   -11.1
+yahoo:USDJPY=X                     n=  324  win= 27.5%  avgR=-0.241  t= -3.5  totalR=   -78.1
+yahoo:^FTSE                        n=  181  win= 27.1%  avgR=-0.256  t= -2.6  totalR=   -46.4
+
+## Each check: avgR when it passes vs fails (all data)
+c-depth      pass n=  251 avgR=+0.111 | fail n=  136 avgR=-0.167 | diff +0.278
+i-macd       pass n= 8647 avgR=-0.010 | fail n= 1005 avgR=-0.080 | diff +0.070
+i-rsi        pass n= 8911 avgR=-0.013 | fail n=  741 avgR=-0.071 | diff +0.059
+i-ema200     pass n= 7366 avgR=-0.003 | fail n= 2286 avgR=-0.061 | diff +0.058
+w-sigbar     pass n=  323 avgR=+0.022 | fail n=   64 avgR=-0.034 | diff +0.057
+wy-context   pass n= 2575 avgR=+0.000 | fail n= 7077 avgR=-0.023 | diff +0.024
+c-ret        pass n= 5249 avgR=-0.012 | fail n= 2326 avgR=-0.032 | diff +0.020
+rr           pass n= 5722 avgR=-0.010 | fail n= 3930 avgR=-0.028 | diff +0.018
+c-talt       pass n=  250 avgR=+0.018 | fail n=  137 avgR=+0.004 | diff +0.014
+w-choch      pass n= 6451 avgR=-0.017 | fail n= 1124 avgR=-0.025 | diff +0.008
+htf          pass n= 4161 avgR=-0.013 | fail n= 5491 avgR=-0.020 | diff +0.006
+i-ema2050    pass n= 6915 avgR=-0.017 | fail n= 2737 avgR=-0.018 | diff +0.002
+e-ovl        pass n=  447 avgR=-0.026 | fail n= 1243 avgR=-0.016 | diff -0.009
+c-alt12      pass n= 5206 avgR=-0.025 | fail n= 2369 avgR=-0.004 | diff -0.021
+effort       pass n= 4096 avgR=+0.007 | fail n= 2195 avgR=+0.039 | diff -0.031
+i-bb         pass n= 8358 avgR=-0.023 | fail n= 1294 avgR=+0.023 | diff -0.047
+test         pass n= 1227 avgR=-0.053 | fail n= 5064 avgR=+0.036 | diff -0.089
+
+## Reward:risk to target 1 in 5 buckets (edges 1.69, 1.99, 2.37, 3.04)
+bucket 1                           n= 1982  win= 38.0%  avgR=-0.023  t= -0.9  totalR=   -45.7
+bucket 2                           n= 1922  win= 35.3%  avgR=-0.031  t= -1.1  totalR=   -59.5
+bucket 3                           n= 1917  win= 35.0%  avgR=+0.017  t= +0.6  totalR=   +32.9
+bucket 4                           n= 1910  win= 33.0%  avgR=+0.004  t= +0.1  totalR=    +7.7
+bucket 5                           n= 1921  win= 27.7%  avgR=-0.052  t= -1.3  totalR=  -100.1
+
+## Stop distance in ATR in 5 buckets (edges 2.09, 2.53, 3.15, 4.04)
+bucket 1                           n= 1966  win= 28.5%  avgR=-0.070  t= -2.0  totalR=  -138.4
+bucket 2                           n= 1901  win= 30.0%  avgR=-0.053  t= -1.6  totalR=  -101.6
+bucket 3                           n= 1933  win= 32.6%  avgR=-0.015  t= -0.5  totalR=   -29.9
+bucket 4                           n= 1929  win= 36.4%  avgR=+0.021  t= +0.7  totalR=   +40.7
+bucket 5                           n= 1923  win= 41.7%  avgR=+0.034  t= +1.2  totalR=   +64.6
+
+## Stop distance % of price in 5 buckets (edges 0.534, 1.6, 3.54, 7.56)
+bucket 1                           n= 1933  win= 29.5%  avgR=-0.109  t= -3.3  totalR=  -210.8
+bucket 2                           n= 1928  win= 30.3%  avgR=-0.063  t= -1.9  totalR=  -120.9
+bucket 3                           n= 1931  win= 32.4%  avgR=+0.006  t= +0.2  totalR=   +11.8
+bucket 4                           n= 1930  win= 35.4%  avgR=+0.028  t= +0.9  totalR=   +54.8
+bucket 5                           n= 1930  win= 41.6%  avgR=+0.052  t= +1.9  totalR=  +100.4
+
+## Score in 5 buckets (edges 63, 70, 74, 80)
+bucket 1                           n= 2329  win= 34.3%  avgR=-0.056  t= -2.1  totalR=  -130.0
+bucket 2                           n= 2553  win= 35.2%  avgR=+0.003  t= +0.1  totalR=    +7.1
+bucket 3                           n= 1247  win= 33.0%  avgR=-0.041  t= -1.0  totalR=   -50.7
+bucket 4                           n= 1776  win= 34.1%  avgR=+0.023  t= +0.7  totalR=   +41.7
+bucket 5                           n= 1747  win= 31.6%  avgR=-0.019  t= -0.5  totalR=   -32.8
+
+## Filter search: found on the first 70% of time, checked on the last 30%
+kind=stock/index & long                  TRAIN n=1190 avgR=+0.226 win=43.0% | TEST n= 515 avgR=+0.037 win=37.5%
+tf=1d & long                             TRAIN n=1395 avgR=+0.192 win=41.1% | TEST n= 624 avgR=+0.083 win=38.9%
+tf=1d & htf=pass                         TRAIN n=1322 avgR=+0.115 win=38.6% | TEST n= 526 avgR=+0.139 win=42.0%
+tf=1d & i-ema200=pass                    TRAIN n=1869 avgR=+0.094 win=39.3% | TEST n= 859 avgR=+0.038 win=39.5%
+kind=stock/index & score>=80             TRAIN n= 556 avgR=+0.172 win=38.8% | TEST n= 215 avgR=+0.049 win=36.7%
+kind=stock/index & htf=pass              TRAIN n=1273 avgR=+0.108 win=38.0% | TEST n= 468 avgR=-0.005 win=36.8%
+kind=stock/index & rr=pass               TRAIN n=1080 avgR=+0.113 win=36.2% | TEST n= 501 avgR=+0.043 win=34.7%
+kind=stock/index & i-ema200=pass         TRAIN n=1511 avgR=+0.093 win=38.5% | TEST n= 686 avgR=+0.009 win=36.3%
+kind=stock/index & stopAtr>=1.5          TRAIN n=1827 avgR=+0.084 win=37.7% | TEST n= 814 avgR=+0.022 win=36.1%
+long & rr1<=5                            TRAIN n=3449 avgR=+0.061 win=36.4% | TEST n=1456 avgR=-0.083 win=32.8%
+tf=1d & stopAtr>=3.0                     TRAIN n= 998 avgR=+0.111 win=44.1% | TEST n= 502 avgR=-0.002 win=44.2%
+long & rr1<=3                            TRAIN n=2898 avgR=+0.065 win=37.6% | TEST n=1242 avgR=-0.062 win=34.3%
+long & stopAtr>=1.0                      TRAIN n=3519 avgR=+0.058 win=36.1% | TEST n=1487 avgR=-0.071 win=32.6%
+kind=stock/index & stopAtr>=3.0          TRAIN n= 886 avgR=+0.114 win=43.0% | TEST n= 419 avgR=-0.042 win=38.4%
+tf=1d & score>=80                        TRAIN n= 593 avgR=+0.137 win=38.8% | TEST n= 270 avgR=+0.127 win=39.6%
+kind=stock/index & stopAtr>=2.0          TRAIN n=1628 avgR=+0.083 win=38.5% | TEST n= 733 avgR=+0.014 win=36.8%
+long & i-macd=pass                       TRAIN n=3213 avgR=+0.058 win=36.3% | TEST n=1342 avgR=-0.082 win=32.5%
+kind=stock/index & stopAtr>=1.0          TRAIN n=1923 avgR=+0.075 win=37.2% | TEST n= 865 avgR=+0.020 win=36.0%
+long & stopAtr>=1.5                      TRAIN n=3368 avgR=+0.057 win=36.3% | TEST n=1422 avgR=-0.063 win=32.8%
+kind=stock/index & w-choch=pass          TRAIN n=1356 avgR=+0.089 win=36.0% | TEST n= 571 avgR=+0.016 win=34.2%
+long & i-rsi=pass                        TRAIN n=3298 avgR=+0.056 win=36.2% | TEST n=1379 avgR=-0.060 win=33.0%
+kind=stock/index & score>=70             TRAIN n=1324 avgR=+0.087 win=37.1% | TEST n= 555 avgR=+0.002 win=34.4%
+kind=stock/index                         TRAIN n=1949 avgR=+0.072 win=37.0% | TEST n= 877 avgR=+0.012 win=35.7%
+kind=stock/index & e-sb=pass             TRAIN n=1949 avgR=+0.072 win=37.0% | TEST n= 877 avgR=+0.012 win=35.7%
+kind=stock/index & trigger=pass          TRAIN n=1949 avgR=+0.072 win=37.0% | TEST n= 877 avgR=+0.012 win=35.7%

@@ -38,14 +38,16 @@
 - [x] Wider universe check — passed (edge holds on 48 new markets)
 - [x] Crypto liquidity / small caps — crypto DROPPED from the edge entirely (Nov 25 evening run, 93 markets): small caps −0.23R; other crypto +0.14R but test −0.14R; dollar volume didn't rescue it. Non-crypto: n=997, +0.257R, test +0.330R, 37/47 markets positive.
 - [x] Volatility-scaled position size — dropped (per-risk result +0.238 → +0.246 at best, drawdowns no better; risk-based sizing already used)
-- [ ] Wave-3 entry after higher low + break of last lower high (new entry type: engine work)
-- [ ] Skip entries in a sideways wave 4 after a sharp wave 2 (alternation)
+- [x] Wave-3 entry after higher low + break of last lower high — dropped (Nov 26; tested as a filter: close above wave 2's last minor lower high. Only 134 edge trades have one; win rate 55% vs 42% but +0.241R vs +0.258R without; train +0.18R, test +0.34R n=50. Higher hit rate, no extra R, too few trades)
+- [x] Skip entries in a sideways wave 4 after a sharp wave 2 (alternation) — dropped (Nov 26; only 38 wave-5 setups match, −0.12R; skipping them leaves wave-5 entries at −0.01R, still no edge. Wave-3 analog, skip when wave 2 took ≥1.618× wave 1's time: train unchanged +0.225R, test +0.330→+0.367R; fails train)
 - [ ] Wave-5 RSI/EWO divergence reversal (new setup type)
-- [ ] Fibonacci cluster (2+ projections within 0.5 ATR) as target/entry filter
+- [x] Fibonacci cluster (2+ projections within 0.5 ATR) as target/entry filter — dropped (Nov 26; wave-1 projections vs wave-2 external retracements: cluster n=221 +0.217R, train +0.14R; no cluster +0.267R. Clusters near target 1 the same. No gain)
 - [x] Count stability — dropped (count unchanged on the previous bar: +0.22R, test +0.14R; brand-new count: +0.23R, test +0.31R; no gain)
 - [x] Weekly timeframe — dropped (only 62 setups in 30 markets with enough weekly history; the edge rule averaged −0.11R, recent −0.31R; no edge, too few trades)
-- [ ] Funding-rate caution for crypto longs (needs funding data)
+- [x] Funding-rate caution for crypto longs — closed without testing (Nov 26): crypto is no longer approved at all, so the filter can't change any approval; reopen only if crypto returns to the edge
 
 _Note: the lab-data branch holds only the latest run (the Nov 25 evening run was weekly-only). Re-run the full lab before comparing._
+
+## Nov 26 sprint run 3: full lab (93 markets, 9652 setups). Edge unchanged: n=997, +0.256R, train +0.225R, test +0.330R. Fibonacci cluster, wave-2 lower-high break, and 2/4 alternation all dropped (details in the checklist and sprint-2026-11-26.txt). Only the wave-5 divergence idea remains.
 
 ## Nov 25 evening: approval excludes crypto; scanner gained 60 liquid US stocks and 30 funds (sector, country, bond, commodity) to keep about one approval a day.
