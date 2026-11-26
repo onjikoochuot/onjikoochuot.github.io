@@ -40,7 +40,7 @@
 - [x] Volatility-scaled position size — dropped (per-risk result +0.238 → +0.246 at best, drawdowns no better; risk-based sizing already used)
 - [x] Wave-3 entry after higher low + break of last lower high — dropped (Nov 26; tested as a filter: close above wave 2's last minor lower high. Only 134 edge trades have one; win rate 55% vs 42% but +0.241R vs +0.258R without; train +0.18R, test +0.34R n=50. Higher hit rate, no extra R, too few trades)
 - [x] Skip entries in a sideways wave 4 after a sharp wave 2 (alternation) — dropped (Nov 26; only 38 wave-5 setups match, −0.12R; skipping them leaves wave-5 entries at −0.01R, still no edge. Wave-3 analog, skip when wave 2 took ≥1.618× wave 1's time: train unchanged +0.225R, test +0.330→+0.367R; fails train)
-- [ ] Wave-5 RSI/EWO divergence reversal (new setup type)
+- [x] Wave-5 RSI divergence reversal (buy) — too rare to judge: 15 cases in 15 years across 93 markets (7 in stocks/funds/commodities: 71% won, +1.56R). Kept in the lab to keep collecting; not in the app.
 - [x] Fibonacci cluster (2+ projections within 0.5 ATR) as target/entry filter — dropped (Nov 26; wave-1 projections vs wave-2 external retracements: cluster n=221 +0.217R, train +0.14R; no cluster +0.267R. Clusters near target 1 the same. No gain)
 - [x] Count stability — dropped (count unchanged on the previous bar: +0.22R, test +0.14R; brand-new count: +0.23R, test +0.31R; no gain)
 - [x] Weekly timeframe — dropped (only 62 setups in 30 markets with enough weekly history; the edge rule averaged −0.11R, recent −0.31R; no edge, too few trades)
@@ -58,3 +58,10 @@ _Note: the lab-data branch holds only the latest run (the Nov 25 evening run was
 - Weekday and volatility/ADX regimes: every bucket positive; no regime filter needed (calm markets weakest at +0.18R).
 - Meta-labeling (logistic regression and gradient boosting, trained on the first 70% of time): did NOT beat the rule on the last 30%; the model's preferred half of rule trades did worse (+0.23–0.29R vs +0.41–0.46R). Not adopted; re-test in future check-ups as data grows.
 - App: count check (re-counts the last ~3 months as-of each candle), open-trade note above the verdict, edge-health monitor (last 30 daily trades vs the tested lower bound), timeframe report card, confirmations on every close/delete.
+
+## Nov 26 wave-counter research (`lab/sprint4.py`; 11,970 records)
+The counter (Neely monowaves at 2.2/3.6/5.8×ATR, last swings checked against the hard rules) was tested against alternatives. None beat it:
+- Sub-waves (Minute degree, 1.5×ATR) traded on their own: edge rule +0.196R, but 40% duplicate existing trades; the genuinely new ones made +0.055R on the older data (t 0.6). Not adopted.
+- Wave 1 starting at the 3-month low (count anchored in the bigger picture): wins 47% vs 36% in both halves, but average R not better on the newest data (+0.30 vs +0.39). Shown in the app's count check as information, not a filter.
+- Next-larger degree trending up: worse in both halves. All degrees agreeing: worse. Not adopted.
+- Idea checklist complete (20/20). Future check-ups: one idea per run, plus keep collecting wave-5 divergence cases.

@@ -5,7 +5,7 @@ import type { Candle, Tf } from "../engine/types";
 /** Bars in about three months, per timeframe (capped so the check stays quick). */
 const BARS_3M: Partial<Record<Tf, number>> = { "5m": 60, "15m": 60, "30m": 60, "1h": 60, "2h": 60, "4h": 60, "1d": 63, "1w": 13, "1M": 3 };
 
-type Point = { t: number; key: string; name: string; dir: string; score: number };
+type Point = { t: number; key: string; name: string; dir: string; score: number; anchored: boolean | null };
 const keyOf = (s: { dir: string; name: string; labels: { text: string; p: number }[] }) =>
   `${s.dir}|${s.name}|${s.labels.map((l) => `${l.text}@${fmt(l.p)}`).join(",")}`;
 
@@ -32,7 +32,14 @@ export default function CountCheck({ candles, tf, symbol }: { candles: Candle[];
         const end = ends[i++];
         const a = analyze(candles.slice(Math.max(0, end - 899), end + 1), tf, undefined, symbol);
         const s = a.best;
-        points.push(s ? { t: candles[end].t, key: keyOf(s), name: s.name, dir: s.dir, score: s.score } : { t: candles[end].t, key: "none", name: "No clear count", dir: "", score: 0 });
+        // Does wave 1 start at the lowest low of the last ~3 months (63 candles)? Only meaningful for a wave-3 buy.
+        let anchored: boolean | null = null;
+        if (s && s.name === "Wave 3 entry" && s.dir === "long") {
+          const p0 = s.labels.find((l) => l.text === "0");
+          const lo = Math.min(...candles.slice(Math.max(0, end - 63), end + 1).map((k) => k.l));
+          anchored = p0 ? p0.p <= lo * 1.0000001 : null;
+        }
+        points.push(s ? { t: candles[end].t, key: keyOf(s), name: s.name, dir: s.dir, score: s.score, anchored } : { t: candles[end].t, key: "none", name: "No clear count", dir: "", score: 0, anchored: null });
       }
       setRes({ points: [...points], done: i >= ends.length });
       if (i < ends.length) setTimeout(work, 0);
@@ -63,6 +70,7 @@ export default function CountCheck({ candles, tf, symbol }: { candles: Candle[];
   return (
     <details className="card count-check">
       <summary><b>Count check (last {span >= 1 ? `${Math.round(span)} days` : `${p.length} candles`}):</b> {verdict} {changes > 0 && `The count changed ${changes} time${changes > 1 ? "s" : ""}.`}</summary>
+      {now.anchored !== null && <p>{now.anchored ? "Wave 1 starts at the lowest point of the last 3 months, so the count is anchored in the bigger picture. In testing, such wave-3 buys won 47% of the time versus 36% for the rest (their average profit was similar)." : "Wave 1 does not start at the lowest point of the last 3 months. In testing, such wave-3 buys won less often (36% versus 47%), though their average profit was similar."}</p>}
       <p className="sub">Viko re-counted this chart {p.length} times, each time seeing only the candles up to that day, the way you'd re-check an old count. In testing, a brand-new count did as well as an old one, so this is a confidence check, not a filter.</p>
       <ul>{seen.map((x) => <li key={x.key}><b>{x.name}</b>{x.dir ? ` (${x.dir === "long" ? "buy" : "sell"}, rules ${x.score}%)` : ""}: last seen {new Date(x.t * 1000).toLocaleDateString()}{x.key === now.key ? " — current" : ""}</li>)}</ul>
     </details>

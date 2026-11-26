@@ -85,13 +85,13 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
         <div className="ap-row">
           <div>
             <h3>Autopilot</h3>
-            <p className="ctx-note">Every 15 minutes Viko scans your {acc.watchlist.length} watchlist markets and opens a paper trade {acc.auto_level === "practice" ? "for approved setups and for clean practice setups (65% or more of the rules, trigger fired, reward at least 2× the risk)" : "only when a setup is approved (80% or more)"}. It stays out of trades when big news (like US inflation or a rate decision) is due within 2 hours. It runs on the server, so your phone can be off.{acc.last_scan ? ` Last scan ${new Date(acc.last_scan).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""}</p>
+            <p className="ctx-note">Every 15 minutes Viko scans your {acc.watchlist.length} watchlist markets and opens a paper trade {acc.auto_level === "practice" ? "for approved setups and for clean practice setups (65% or more of the rules, trigger fired, reward at least 2× the risk; practice setups are outside the tested edge, so expect them to lose more often)" : "only for Viko-approved setups (the tested edge), from the scanner across all markets"}. It stays out of trades when big news (like US inflation or a rate decision) is due within 2 hours. It runs on the server, so your phone can be off.{acc.last_scan ? ` Last scan ${new Date(acc.last_scan).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""}</p>
           </div>
           <button role="switch" aria-checked={acc.autopilot} className={`switch ${acc.autopilot ? "on" : ""}`} onClick={() => set({ autopilot: !acc.autopilot }, "ap")} disabled={busy === "ap"}><span /></button>
         </div>
         <div className="ap-row wrap">
           <div className="seg" role="radiogroup" aria-label="Which setups the autopilot trades">
-            {(["practice", "approved"] as const).map((l) => <button key={l} role="radio" aria-checked={acc.auto_level === l} className={acc.auto_level === l ? "on" : ""} onClick={() => set({ auto_level: l }, "lvl")}>{l === "practice" ? "Practice (65%+)" : "Strict (80%+)"}</button>)}
+            {(["practice", "approved"] as const).map((l) => <button key={l} role="radio" aria-checked={acc.auto_level === l} className={acc.auto_level === l ? "on" : ""} onClick={() => set({ auto_level: l }, "lvl")}>{l === "practice" ? "Practice (65%+, untested)" : "Approved only (tested edge)"}</button>)}
           </div>
           <div className="seg" role="group" aria-label="Timeframes the autopilot scans">
             {TFS.map((t) => { const on = acc.auto_tfs.includes(t); return <button key={t} aria-pressed={on} className={on ? "on" : ""} onClick={() => set({ auto_tfs: on ? acc.auto_tfs.filter((x) => x !== t) : [...acc.auto_tfs, t] }, "tf")}>{t}</button>; })}

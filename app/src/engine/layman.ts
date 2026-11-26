@@ -45,7 +45,7 @@ export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, acco
       headline: `Don't trade ${name} right now`,
       steps: [...extra,
         `Nothing clear is setting up on the ${TF_WORD[tf]} chart, so the safest move is to do nothing.`,
-        s?.hardFail ? "The wave pattern breaks one of Neely's must-pass rules, so any trade here would be a guess." : `Only ${s?.score ?? 0}% of the book rules agree, and Viko needs 80% before it says go.`,
+        s?.hardFail ? "The wave pattern breaks one of Neely's must-pass rules, so any trade here would be a guess." : "Viko only says go for its tested edge: a daily-chart wave-3 buy in an uptrend, in stocks, funds, indices or commodities.",
         `Check again in about ${duration(3 * h)}, or scan other markets for a better chance.`,
       ],
     };
