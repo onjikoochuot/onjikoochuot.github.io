@@ -176,7 +176,31 @@ async function main() {
       const brokeW1 = L["1"] != null ? (s.dir === "long" ? cl > L["1"] : cl < L["1"]) : null;
       const atrRel = (() => { const xs = a.ind.atr.slice(-120).filter((v) => v > 0).sort((p, q) => p - q); return xs.length > 20 && atr ? +(xs.filter((v) => v <= atr).length / xs.length).toFixed(2) : null; })();
       const vol20r = (() => { const r = (k: number) => Math.log(c[k].c / c[k - 1].c); if (j < 140) return null; const sd = (a0: number, len: number) => { const xs: number[] = []; for (let k = a0 - len + 1; k <= a0; k++) xs.push(r(k)); const m = xs.reduce((p, q) => p + q, 0) / xs.length; return Math.sqrt(xs.reduce((p, q) => p + (q - m) ** 2, 0) / xs.length); }; const meds: number[] = []; for (let k = j - 120; k <= j; k += 5) meds.push(sd(k, 20)); meds.sort((p, q) => p - q); return +(sd(j, 20) / meds[Math.floor(meds.length / 2)]).toFixed(2); })();
-      const extra = { ret63, aboveSma100: sma100 ? cl > sma100 : null, adx: adx(win), volRatio, donBreak, w2Depth, brokeW1, atrPct: atrRel, volRegime: vol20r, rNetAtr: manageAtr(c, i, s, sym, MAX_HOLD[tf], atr ?? 0), stable1, stable2, dollarVol20: +(c.slice(Math.max(0, j - 20), j).reduce((x, b) => x + b.v * b.c, 0) / Math.min(20, j)).toFixed(0), weekday: new Date(c[i].t * 1000).getUTCDay() };
+      // Sprint Nov 26: Fibonacci cluster, 2/4 alternation, break of the last lower high inside wave 2
+      const Li = Object.fromEntries(s.labels.map((l) => [l.text, l.i]));
+      const sgn = s.dir === "long" ? 1 : -1;
+      let fibCluster: boolean | null = null, fibClusterT1: boolean | null = null, w2TimeRatio: number | null = null, brokeLH: boolean | null = null, altSharp2Side4: boolean | null = null;
+      if (L["0"] != null && L["1"] != null && L["2"] != null && atr) {
+        const w1 = Math.abs(L["1"] - L["0"]), w2 = Math.abs(L["1"] - L["2"]);
+        const A = [1, 1.618, 2.618].map((f) => L["2"] + sgn * f * w1), B = [1.618, 2.618].map((f) => L["2"] + sgn * f * w2);
+        const pairs = A.flatMap((x) => B.map((y) => ({ d: Math.abs(x - y), m: (x + y) / 2 })));
+        fibCluster = pairs.some((q) => q.d <= 0.5 * atr);
+        fibClusterT1 = pairs.some((q) => q.d <= 0.5 * atr && Math.abs(q.m - s.target1) <= atr);
+        const t1b = Li["1"] - Li["0"], t2b = Li["2"] - Li["1"];
+        w2TimeRatio = t1b > 0 ? +(t2b / t1b).toFixed(2) : null;
+        const minor = (a.pivotsByDegree as any)?.minor as { i: number; p: number; kind: string }[] | undefined;
+        if (minor && s.name === "Wave 3 entry" && s.dir === "long") {
+          const hs = minor.filter((q) => q.i > Li["1"] && q.i < Li["2"] && q.kind === (s.dir === "long" ? "H" : "L"));
+          const lh = hs.length ? hs[hs.length - 1].p : null;
+          brokeLH = lh == null ? null : s.dir === "long" ? cl > lh : cl < lh;
+        }
+        if (L["3"] != null && L["4"] != null && Li["3"] != null && Li["4"] != null) {
+          const w3 = Math.abs(L["3"] - L["2"]), w4 = Math.abs(L["3"] - L["4"]), t2b2 = Li["2"] - Li["1"], t4b = Li["4"] - Li["3"];
+          const sharp2 = w2 / w1 >= 0.5 && t2b2 <= t1b, side4 = w4 / w3 <= 0.382 && t4b >= 1.5 * Math.max(1, t2b2);
+          altSharp2Side4 = sharp2 && side4;
+        }
+      }
+      const extra = { fibCluster, fibClusterT1, w2TimeRatio, brokeLH, altSharp2Side4, ret63, aboveSma100: sma100 ? cl > sma100 : null, adx: adx(win), volRatio, donBreak, w2Depth, brokeW1, atrPct: atrRel, volRegime: vol20r, rNetAtr: manageAtr(c, i, s, sym, MAX_HOLD[tf], atr ?? 0), stable1, stable2, dollarVol20: +(c.slice(Math.max(0, j - 20), j).reduce((x, b) => x + b.v * b.c, 0) / Math.min(20, j)).toFixed(0), weekday: new Date(c[i].t * 1000).getUTCDay() };
       appendFileSync(out, JSON.stringify({
         sym, kind: kindOf(sym), tf, t: c[i].t, dir: s.dir, name: s.name, pattern: s.pattern, degree: s.degree, score: s.score, verdict: s.verdict, edge: s.edge?.ok ?? null, rr1: +s.rr1.toFixed(2), rr2: +s.rr2.toFixed(2),
         stopPct: +(Math.abs(c[i].c - s.stop) / c[i].c * 100).toFixed(3), stopAtr: atr ? +(Math.abs(c[i].c - s.stop) / atr).toFixed(2) : null,
