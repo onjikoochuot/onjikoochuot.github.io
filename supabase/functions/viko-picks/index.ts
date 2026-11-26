@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     const tf = String(b.tf) as Tf;
     if (!(tf in TF_HOURS)) return json({ error: "bad tf" }, 400);
     // Batches keep each run inside the edge runtime's CPU and memory limits.
-    const parts = Math.min(64, Math.max(1, Number(b.parts ?? 1)));
+    const parts = Math.min(128, Math.max(1, Number(b.parts ?? 1)));
     const part = Math.min(parts - 1, Math.max(0, Number(b.part ?? 0)));
     const size = Math.ceil(UNIVERSE.length / parts);
     const slice = UNIVERSE.slice(part * size, part * size + size);

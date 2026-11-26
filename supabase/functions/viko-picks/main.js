@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     const b = await req.json().catch(() => ({}));
     const tf = String(b.tf);
     if (!(tf in TF_HOURS)) return json({ error: "bad tf" }, 400);
-    const parts = Math.min(64, Math.max(1, Number(b.parts ?? 1)));
+    const parts = Math.min(128, Math.max(1, Number(b.parts ?? 1)));
     const part = Math.min(parts - 1, Math.max(0, Number(b.part ?? 0)));
     const size = Math.ceil(UNIVERSE.length / parts);
     const slice = UNIVERSE.slice(part * size, part * size + size);
