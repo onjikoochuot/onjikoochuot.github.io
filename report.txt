@@ -1,0 +1,2 @@
+# Viko lab: 11970 setups, 207 market-timeframe series
+ALL                                n=11970  win= 33.3%  avgR=-0.020  t= -1.5  totalR=  -234.9
