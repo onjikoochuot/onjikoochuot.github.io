@@ -47,7 +47,8 @@ var HORIZONS = {
   "48h": { h: 48, tfs: ["15m", "30m", "1h", "2h", "4h"], name: "48 hours" },
   "72h": { h: 72, tfs: ["30m", "1h", "2h", "4h", "1d"], name: "72 hours" },
   "1w": { h: 168, tfs: ["1h", "2h", "4h", "1d"], name: "1 week" },
-  "1m": { h: 720, tfs: ["4h", "1d", "1w"], name: "1 month" }
+  "1m": { h: 720, tfs: ["4h", "1d", "1w"], name: "1 month" },
+  "2m": { h: 1440, tfs: ["1d"], name: "up to 2 months" }
 };
 var RISK = { careful: 0.1, balanced: 0.2, bold: 0.35, max: 0.5 };
 var ALL_TFS = Object.keys(TF_H);
@@ -616,8 +617,8 @@ async function candidates(db, cfg, v, exclude, want) {
   const by2 = /* @__PURE__ */ new Map();
   for (const r of rows) by2.set(r.symbol, [...by2.get(r.symbol) ?? [], r]);
   const lean = (r) => r.setup && !r.hard_fail && (r.score ?? 0) >= 55 ? r.dir : null;
-  const atBar = (r) => (r.score ?? 0) >= cfg.strict && (r.verdict === "APPROVED" || cfg.strict < 80 && r.verdict === "WATCH" && r.triggered && !r.hard_fail && (r.rr1 ?? 0) >= 2);
-  const nearBar = (r) => !atBar(r) && (r.score ?? 0) >= 55 && !r.hard_fail && r.triggered && (r.rr1 ?? 0) >= 1.5 && r.verdict !== "NO TRADE";
+  const atBar = (r) => r.verdict === "APPROVED";
+  const nearBar = (_r) => false;
   const fitsTime = (r) => hz.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6 <= hz.h;
   const newsSoon = (r) => {
     const m = String(r.news_warn ?? "").match(/is due (\S+)$/);

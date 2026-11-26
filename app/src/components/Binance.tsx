@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ConfirmButton from "./Confirm";
 import { fmt } from "../engine/analyze";
 import { binance, BN_REGIONS, save, store, type BnHistory, type BnMode, type BnOrderResult, type BnStatus } from "../lib/api";
 
@@ -109,7 +110,6 @@ export function BinanceView({ appKey, onNeedKey, embedded }: { appKey: string; o
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [appKey, prefs.mode, prefs.region]);
 
   const closePos = async (symbol: string) => {
-    if (!confirm(`Close your ${symbol} position at the market price now?`)) return;
     setClosing(symbol);
     try { await binance.close(appKey, prefs.region, prefs.mode, symbol); await load(); } catch (e) { setErr((e as Error).message); }
     setClosing("");
@@ -178,7 +178,7 @@ export function BinanceView({ appKey, onNeedKey, embedded }: { appKey: string; o
                     <td className={`r mono ${p.pnl >= 0 ? "bull" : "bear"}`}>{p.pnl >= 0 ? "+" : ""}{p.pnl.toFixed(2)}</td>
                     <td className="r mono">{p.liq ? fmt(p.liq) : "–"}</td>
                     <td>{p.orders.length ? p.orders.map((o) => <span key={o.type + o.trigger} className="sub">{o.type === "STOP_MARKET" ? "Stop" : "Target"} {fmt(o.trigger)}</span>) : <span className="tag no">No stop-loss!</span>}</td>
-                    <td><button className="btn" onClick={() => closePos(p.symbol)} disabled={closing === p.symbol}>{closing === p.symbol ? "Closing…" : "Close now"}</button></td>
+                    <td><ConfirmButton className="btn" busy={closing === p.symbol} label={closing === p.symbol ? "Closing…" : "Close now"} question={`Close your ${p.symbol} position at the market price now?`} yes="Yes, close it" onConfirm={() => closePos(p.symbol)} /></td>
                   </tr>
                 ))}
               </tbody>

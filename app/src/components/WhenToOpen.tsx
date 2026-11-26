@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ConfirmButton from "./Confirm";
 import { fmt } from "../engine/analyze";
 import { paper, type AutoPick, type PendingOrder } from "../lib/api";
 
@@ -27,7 +28,7 @@ export function levelProblem(p: P, level: number | null): string {
 
 export function waitSentence(p: P, w: Wait): string {
   const then = w.askFirst ? " Viko then asks you before opening it." : "";
-  if (w.mode === "confirm") return `Waits until Viko re-reads the ${p.tf} chart and approves the setup at ${w.minScore}%+ with its trigger fired.${then}`;
+  if (w.mode === "confirm") return `Waits until Viko re-reads the ${p.tf} chart and approves the setup (tested edge, trigger fired).${then}`;
   if (w.mode === "price" && w.level) {
     const up = p.price != null ? w.level > p.price : false;
     return `Waits until the price ${up ? "rises" : "dips"} to ${fmt(w.level)}${p.price != null ? ` (now ${fmt(p.price)})` : ""}.${then}`;
@@ -58,7 +59,7 @@ export default function WhenToOpen({ picks, value, onChange }: { picks: P[]; val
         </>
       )}
       {value.mode === "confirm" && (
-        <small className="sub">Viko re-reads the chart every 5 minutes and acts only when the setup is approved ({value.minScore}%+) and its trigger has fired, using the stop-loss and targets from that moment. If the setup never confirms, nothing is traded.</small>
+        <small className="sub">Viko re-reads the chart every 5 minutes and acts only when it approves the setup (inside the tested edge, trigger fired), using the stop-loss and targets from that moment. If the setup never confirms, nothing is traded.</small>
       )}
       {value.mode !== "now" && (
         <>
@@ -141,7 +142,7 @@ function AskCard({ o, appKey, onChanged }: { o: PendingOrder; appKey: string; on
           {live && <label className="check bn-agree"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I understand this trades my real money and that I can lose it.</label>}
           {err && <p className="err">{err}</p>}
           <div className="rt-actions">
-            <button className="btn" disabled={!!busy} onClick={() => act("skip")}>{busy === "skip" ? "Skipping…" : "Skip"}</button>
+            <ConfirmButton className="btn" disabled={!!busy} label={busy === "skip" ? "Skipping…" : "Skip"} question="Skip this trade? Nothing will be traded." yes="Yes, skip" onConfirm={() => act("skip")} />
             <button className={`btn primary ${live ? "sell-btn" : ""}`} disabled={!!busy || !(amount > 0) || (live && !agree)} onClick={() => act("approve")}>{busy === "approve" ? "Opening…" : `Approve: ${o.dir === "long" ? "buy" : "sell"} ${money(o, amount)}`}</button>
           </div>
           <p className="sub">Viko re-checks the price when you press Approve and refuses if the trade is no longer worth taking. {o.no_answer === "wait" ? "If you don't answer, it goes back to waiting for the entry." : "If you don't answer, it's cancelled."}</p>
@@ -166,10 +167,10 @@ function WaitRow({ o, appKey, onChanged }: { o: PendingOrder; appKey: string; on
         <span className={`tag ${o.dir === "long" ? "ok" : "sell"}`}>{o.dir === "long" ? "Buy" : "Sell"}</span>
         <span className="tag no">{o.tf}</span>
         <span className="tag no">{accountOf(o)}</span>
-        <button className="btn ghost small" onClick={() => run(() => paper.pendingCancel(appKey, o.id))}>Cancel</button>
+        <ConfirmButton className="btn ghost small" label="Cancel" question={`Cancel the waiting order for ${o.label}?`} yes="Yes, cancel it" onConfirm={() => run(() => paper.pendingCancel(appKey, o.id))} />
       </div>
       <p className="sub">
-        {o.wait_for === "price" ? `Opens at ${fmt(Number(o.level))}` : `Opens when Viko confirms at ${o.min_score}%+`}
+        {o.wait_for === "price" ? `Opens at ${fmt(Number(o.level))}` : `Opens when Viko approves it`}
         {o.last_price != null ? `; price now ${fmt(Number(o.last_price))}` : ""}. Stop-loss {fmt(Number(o.stop))}, target 1 {fmt(Number(o.target1))}.
         {" "}Gives up in {left(o.expires_at)}.{o.note ? ` ${o.note}` : ""}
       </p>

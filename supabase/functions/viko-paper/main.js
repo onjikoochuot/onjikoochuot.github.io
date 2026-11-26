@@ -332,6 +332,23 @@ async function autopilot(db, acc) {
   const busy = new Set((open ?? []).map((r) => r.symbol));
   let slots = MAX_OPEN - busy.size;
   const opened = [];
+  if (acc.auto_level !== "practice") {
+    const { data: rows } = await db.from("viko_picks").select("symbol,label,tf,price,setup,score,scanned_at").eq("verdict", "APPROVED").gt("scanned_at", new Date(Date.now() - 3 * 36e5).toISOString()).order("score", { ascending: false }).limit(40);
+    const fresh = (rows ?? []).filter((r) => r.setup && !busy.has(r.symbol));
+    const live = fresh.length ? await quotes([...new Set(fresh.map((r) => String(r.symbol)))]).catch(() => ({})) : {};
+    for (const r of fresh) {
+      if (slots <= 0 || busy.has(r.symbol)) continue;
+      const st = r.setup, px = live[r.symbol]?.price ?? Number(r.price);
+      try {
+        await openTrade(db, acc, { symbol: r.symbol, label: r.label, tf: r.tf, dir: st.dir, stop: st.stop, target1: st.target1, target2: st.target2, setup: `${st.name} (${st.degree}), tested edge`, score: r.score, tip: st.edge?.why ?? "", source: "auto", closeAfterHours: r.tf === "1d" ? 1440 : void 0 }, px);
+        busy.add(r.symbol);
+        slots--;
+        opened.push(`${r.label} ${r.tf}`);
+      } catch {
+      }
+    }
+    return opened;
+  }
   const watch = acc.watchlist ?? [];
   const cal = await calendar();
   const skipped = /* @__PURE__ */ new Set();
@@ -499,7 +516,7 @@ async function checkPending(db, key) {
       } else {
         const c = await candles(r.symbol, r.tf);
         const a = analyze(c, r.tf, void 0, r.symbol);
-        const s = a.setups.find((x) => x.dir === r.dir && !x.hardFail && x.triggered && x.rr1 >= 2 && x.verdict !== "NO TRADE" && x.score >= r.min_score);
+        const s = a.setups.find((x) => x.dir === r.dir && x.verdict === "APPROVED");
         if (!s) continue;
         lv = { stop: s.stop, target1: s.target1, target2: s.target2, score: s.score, name: `${s.name} (${s.degree})` };
       }

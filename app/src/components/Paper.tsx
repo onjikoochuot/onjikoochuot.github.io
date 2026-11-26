@@ -1,4 +1,5 @@
 import { HistoryBar, useSelection } from "./HistoryTools";
+import ConfirmButton from "./Confirm";
 import { WaitingOrders } from "./WhenToOpen";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmt } from "../engine/analyze";
@@ -135,7 +136,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
               </dl>
               <p className="pos-meta">{t.setup} on {t.tf}, opened {new Date(t.opened_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}{t.t1_hit ? ". Half already banked at target 1." : "."}{t.close_by ? ` Closes by ${new Date(t.close_by).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })} at the latest.` : ""}</p>
               {t.tip && <details className="pos-tip"><summary>The tip behind this trade</summary><p>{t.tip}</p></details>}
-              <button className="btn ghost" onClick={() => close(t.id)} disabled={busy === t.id}>{busy === t.id ? "Closing…" : "Close at market price"}</button>
+              <ConfirmButton className="btn ghost" busy={busy === t.id} label={busy === t.id ? "Closing…" : "Close at market price"} question={`Close ${t.label} now at the market price?`} yes="Yes, close it" onConfirm={() => close(t.id)} />
             </li>
           );
         })}</ul>)}
@@ -151,7 +152,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
             <tr key={t.id} className={hs.has(t.id) ? "picked" : ""}><td><input type="checkbox" checked={hs.has(t.id)} onChange={() => hs.toggle(t.id)} aria-label={`Select ${t.label}`} /></td><td className="mono">{t.closed_at?.slice(5, 16).replace("T", " ")}</td><td><b>{t.label}</b><span className="sub">{t.tf}{t.source === "auto" ? ", autopilot" : ""}</span></td><td>{t.dir === "long" ? "Buy" : "Sell"}</td>
               <td className="r mono">{fmt(t.entry)} → {fmt(t.exit_price ?? 0)}</td><td>{t.close_reason === "target2" ? "Target 2" : t.close_reason === "stop" ? (t.t1_hit ? "Stop at entry" : "Stop-loss") : t.close_reason === "manual" ? "You closed it" : t.close_reason === "time" ? "Time limit" : t.close_reason === "trailing" ? "Trailing stop (profit locked)" : t.close_reason}</td>
               <td className={`r mono ${Number(t.realized) >= 0 ? "bull" : "bear"}`}>{money(Number(t.realized))}</td>
-              <td><button className="link" onClick={async () => { await paper.deleteHistory(appKey, { ids: [t.id] }); await load(); }}>Delete</button></td></tr>
+              <td><ConfirmButton className="link" label="Delete" question="Hide this trade from the history? (The track record keeps it.)" yes="Yes, delete" onConfirm={async () => { await paper.deleteHistory(appKey, { ids: [t.id] }); await load(); }} /></td></tr>
           ))}</tbody>
         </table></>)}
 
@@ -160,7 +161,7 @@ export default function Paper({ appKey, onNeedKey, watchlist, onOpenMarket }: { 
       <details className="danger">
         <summary>Start over</summary>
         <p className="ctx-note">Deletes every paper trade and resets the account.</p>
-        <div className="row">{[1000, 10000, 100000].map((b) => <button key={b} className="btn ghost" onClick={() => set({ reset: { starting_balance: b } }, "reset")}>Reset to {money(b)}</button>)}</div>
+        <div className="row">{[1000, 10000, 100000].map((b) => <ConfirmButton key={b} className="btn ghost" label={`Reset to ${money(b)}`} question={`Reset the paper account to ${money(b)}? This closes every open paper trade and clears the history.`} yes="Yes, reset" onConfirm={() => set({ reset: { starting_balance: b } }, "reset")} />)}</div>
       </details>
     </section>
   );

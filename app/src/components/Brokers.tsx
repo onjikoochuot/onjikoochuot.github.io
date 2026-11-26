@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ConfirmButton from "./Confirm";
 import { fmt } from "../engine/analyze";
 import { auto, save, store, type DerivStatus } from "../lib/api";
 import { BinanceView } from "./Binance";
@@ -59,7 +60,6 @@ function DerivPanel({ appKey, onNeedKey }: { appKey: string; onNeedKey: () => vo
   };
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [appKey, mode]);
   const close = async (id: number) => {
-    if (!confirm("Close this Deriv contract now at the current price?")) return;
     setClosing(id);
     try { await auto.derivClose(appKey, mode, id); await load(); } catch (e) { setErr((e as Error).message); }
     setClosing(0);
@@ -99,7 +99,7 @@ function DerivPanel({ appKey, onNeedKey }: { appKey: string; onNeedKey: () => vo
                   <td><b>{c.symbol}</b><span className="sub">x{c.multiplier}</span></td><td>{c.type === "MULTUP" ? "Up" : "Down"}</td>
                   <td className="r mono">{c.stake.toFixed(2)}</td><td className="r mono">{fmt(c.entry)}<span className="sub">{fmt(c.spot)}</span></td>
                   <td className={`r mono ${c.profit >= 0 ? "bull" : "bear"}`}>{c.profit >= 0 ? "+" : ""}{c.profit.toFixed(2)}</td>
-                  <td><button className="btn" disabled={closing === c.id} onClick={() => close(c.id)}>{closing === c.id ? "Closing…" : "Close now"}</button></td>
+                  <td><ConfirmButton className="btn" busy={closing === c.id} label={closing === c.id ? "Closing…" : "Close now"} question="Close this Deriv contract now at the current price?" yes="Yes, close it" onConfirm={() => close(c.id)} /></td>
                 </tr>
               ))}</tbody>
             </table>

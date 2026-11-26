@@ -51,3 +51,10 @@ _Note: the lab-data branch holds only the latest run (the Nov 25 evening run was
 ## Nov 26 sprint run 3: full lab (93 markets, 9652 setups). Edge unchanged: n=997, +0.256R, train +0.225R, test +0.330R. Fibonacci cluster, wave-2 lower-high break, and 2/4 alternation all dropped (details in the checklist and sprint-2026-11-26.txt). Only the wave-5 divergence idea remains.
 
 ## Nov 25 evening: approval excludes crypto; scanner gained 60 liquid US stocks and 30 funds (sector, country, bond, commodity) to keep about one approval a day.
+
+## Nov 26 audit (`lab/audit.py`, from the quant checklist the user shared)
+- Monte Carlo (2,000 runs: shuffled, 10% of winners dropped, double costs): profitable in 100% of runs; 95th-pct max drawdown 14% at 0.5% risk, 27% at 1%, 47% at 2% -> default risk per trade set to 0.5% (app setting and paper account).
+- Timeframe report card (same rule): 15m −0.17R, 1h +0.03R (recent −0.11R), 4h −0.07R (recent −0.59R), 1d +0.26R (recent +0.33R), 1w −0.11R (62 trades), 1M untestable. Only daily is approved.
+- Weekday and volatility/ADX regimes: every bucket positive; no regime filter needed (calm markets weakest at +0.18R).
+- Meta-labeling (logistic regression and gradient boosting, trained on the first 70% of time): did NOT beat the rule on the last 30%; the model's preferred half of rule trades did worse (+0.23–0.29R vs +0.41–0.46R). Not adopted; re-test in future check-ups as data grows.
+- App: count check (re-counts the last ~3 months as-of each candle), open-trade note above the verdict, edge-health monitor (last 30 daily trades vs the tested lower bound), timeframe report card, confirmations on every close/delete.

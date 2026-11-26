@@ -169,6 +169,24 @@ async function autopilot(db: DB, acc: any) {
   const busy = new Set((open ?? []).map((r: any) => r.symbol));
   let slots = MAX_OPEN - busy.size;
   const opened: string[] = [];
+  // Approved level: take Viko-approved setups from the background scanner across ALL markets (it re-reads every daily
+  // chart each hour). The old way only looked at a small watchlist on the timeframes you ticked, which could never
+  // produce an approval once approval required the daily-chart tested edge.
+  if (acc.auto_level !== "practice") {
+    const { data: rows } = await db.from("viko_picks").select("symbol,label,tf,price,setup,score,scanned_at")
+      .eq("verdict", "APPROVED").gt("scanned_at", new Date(Date.now() - 3 * 3600000).toISOString()).order("score", { ascending: false }).limit(40);
+    const fresh = (rows ?? []).filter((r: any) => r.setup && !busy.has(r.symbol));
+    const live = fresh.length ? await quotes([...new Set<string>(fresh.map((r: any) => String(r.symbol)))]).catch(() => ({} as Record<string, { price: number }>)) : {};
+    for (const r of fresh as any[]) {
+      if (slots <= 0 || busy.has(r.symbol)) continue;
+      const st = r.setup, px = live[r.symbol]?.price ?? Number(r.price);
+      try {
+        await openTrade(db, acc, { symbol: r.symbol, label: r.label, tf: r.tf, dir: st.dir, stop: st.stop, target1: st.target1, target2: st.target2, setup: `${st.name} (${st.degree}), tested edge`, score: r.score, tip: st.edge?.why ?? "", source: "auto", closeAfterHours: r.tf === "1d" ? 1440 : undefined }, px);
+        busy.add(r.symbol); slots--; opened.push(`${r.label} ${r.tf}`);
+      } catch { /* price moved past the stop or target: skip */ }
+    }
+    return opened;
+  }
   const watch: { id: string; label: string }[] = acc.watchlist ?? [];
   const cal = await calendar();
   const skipped = new Set<string>();
@@ -321,7 +339,8 @@ async function checkPending(db: DB, key: string) {
       } else {
         const c: Candle[] = await candles(r.symbol, r.tf);
         const a = analyze(c, r.tf, undefined, r.symbol);
-        const s = a.setups.find((x: any) => x.dir === r.dir && !x.hardFail && x.triggered && x.rr1 >= 2 && x.verdict !== "NO TRADE" && x.score >= r.min_score);
+        // "Confirmed" = Viko approves it now (tested edge, trigger fired, rules clean), whatever the rule score.
+        const s = a.setups.find((x: any) => x.dir === r.dir && x.verdict === "APPROVED");
         if (!s) continue;
         lv = { stop: s.stop, target1: s.target1, target2: s.target2, score: s.score, name: `${s.name} (${s.degree})` };
       }

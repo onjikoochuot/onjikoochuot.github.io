@@ -30,7 +30,7 @@ const status = (o: Opp) => (o.setup.verdict === "APPROVED" && ready(o) ? ["Appro
 
 /** Filters shared by High performers and Scan, remembered per page. */
 export type Filters = { market: Market | "All"; tf: Tf | "Any"; min: number; dir: "both" | "long" | "short"; readyOnly: boolean; bestPerMarket: boolean };
-export const DEFAULT_FILTERS: Filters = { market: "All", tf: "Any", min: 80, dir: "both", readyOnly: true, bestPerMarket: true };
+export const DEFAULT_FILTERS: Filters = { market: "All", tf: "Any", min: 0, dir: "both", readyOnly: true, bestPerMarket: true };
 export function useFilters(key: string, init: Partial<Filters> = {}) {
   const [f, setF] = useState<Filters>(() => ({ ...DEFAULT_FILTERS, ...init, ...store<Partial<Filters>>(key, {}) }));
   return [f, (p: Partial<Filters>) => setF((c) => { const n = { ...c, ...p }; save(key, n); return n; })] as const;

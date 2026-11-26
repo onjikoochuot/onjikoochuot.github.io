@@ -65,7 +65,19 @@ export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, acco
         `Set your stop-loss at ${fmt(s.stop)}. If the price ${buy ? "falls" : "rises"} there, the trade closes automatically and you lose about ${lossPct.toFixed(1)}%.`,
         `Take profit in two steps: half at ${fmt(s.target1)} (${chg(s.entry, s.target1)}), the rest at ${fmt(s.target2)} (${chg(s.entry, s.target2)}).`,
         `When the first target is hit, move your stop to your entry price, so the rest of the trade can't lose.`,
-        `Expect it to take roughly ${holdLo} to ${holdHi}. Risking ${riskPct}% of ${fmt(account)} means a worst case of about ${fmt(riskMoney)}.`,
+        s.edge?.ok ? `Give it time: in testing, half of these trades took over a month, so don't set a short time limit (Viko lets them run up to 2 months). Risking ${riskPct}% of ${fmt(account)} means a worst case of about ${fmt(riskMoney)}.` : `Expect it to take roughly ${holdLo} to ${holdHi}. Risking ${riskPct}% of ${fmt(account)} means a worst case of about ${fmt(riskMoney)}.`,
+      ],
+    };
+  }
+  // Outside the tested edge: say so plainly, whatever the rule score, so the advice never contradicts the verdict.
+  if (s.edge && !s.edge.ok && !s.hardFail) {
+    return {
+      tone: "wait", validUntil,
+      headline: `Don't trade ${name} with this setup`,
+      steps: [...extra,
+        s.edge.why,
+        `Viko only approves its tested edge: daily-chart wave-3 buys in an uptrend, with a stop at least 1.5× the daily range, in stocks, funds, indices or commodities.`,
+        `The rule score (${s.score}%) only says how many textbook rules agree; in testing it did not predict wins, so it is not a reason to trade.`,
       ],
     };
   }
@@ -84,8 +96,8 @@ export function makeTip(s: Setup | null, name: string, tf: Tf, now: number, acco
     tone: "wait", validUntil,
     headline: `${name} looks promising, but don't ${buy ? "buy" : "sell"} yet`,
     steps: [...extra,
-      `A ${buy ? "rise" : "fall"} is possible, but only ${s.score}% of the book rules agree. Viko waits for 80%.`,
-      s.rr1 < 2 ? `The reward isn't worth the risk yet: the first target is only ${s.rr1.toFixed(1)}× as far as the stop.` : `Watch for the missing confirmations listed below.`,
+      s.hardFail ? `A must-pass rule is broken (see the checklist below), so this count may be wrong.` : `A ${buy ? "rise" : "fall"} is possible, but it isn't ready to trade yet.`,
+      s.rr1 < 1.5 ? `The reward isn't worth the risk yet: the first target is only ${s.rr1.toFixed(1)}× as far as the stop.` : `Watch for the missing confirmations listed below.`,
       `Check again in about ${duration(h)}.`,
     ],
   };

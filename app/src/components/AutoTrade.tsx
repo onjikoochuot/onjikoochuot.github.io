@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import ConfirmButton from "./Confirm";
 import { fmt } from "../engine/analyze";
 import { HistoryBar, useSelection } from "./HistoryTools";
 import { BrokerSelect, brokerLabel, curFor } from "../lib/brokers";
@@ -6,10 +7,9 @@ import DailyLimits from "./DailyLimits";
 import { auto, save, store, type AutoCfg, type AutoEvent, type AutoHistory, type AutoPlan, type AutoPosition, type AutoPreview, type AutoPreviewTrade } from "../lib/api";
 
 type Tab = "start" | "running" | "results" | "connect";
-const HORIZONS: [AutoCfg["horizon"], string][] = [["24h", "24 hours"], ["48h", "48 hours"], ["72h", "72 hours"], ["1w", "1 week"], ["1m", "1 month"]];
-const STRICT = [65, 70, 75, 80, 85, 90, 95, 100];
+const HORIZONS: [AutoCfg["horizon"], string][] = [["2m", "Up to 2 months (recommended)"], ["1m", "1 month"], ["1w", "1 week"], ["72h", "72 hours"], ["48h", "48 hours"], ["24h", "24 hours"]];
 const RISKS: [AutoCfg["risk"], string, string][] = [["careful", "Careful", "about 10% of that trade's money"], ["balanced", "Balanced", "about 20% of that trade's money"], ["bold", "Bold", "about 35% of that trade's money"], ["max", "Max profit", "about 50% of that trade's money (Binance leverage up to 20x, still never past the liquidation point)"]];
-const DEFAULT: AutoCfg = { broker: "both", mode: "demo", amount: 100, count: 3, horizon: "48h", strict: 75, risk: "balanced", alloc: "equal", custom: null, fallback: true };
+const DEFAULT: AutoCfg = { broker: "both", mode: "demo", amount: 100, count: 3, horizon: "2m", strict: 65, risk: "balanced", alloc: "equal", custom: null, fallback: false };
 const cur = (broker: string) => curFor(broker);
 const money = (x: number | null | undefined, c = "") => (x == null ? "–" : `${x >= 0 ? "" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`);
 const signed = (x: number | null | undefined, c = "") => (x == null ? "–" : `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}${c ? ` ${c}` : ""}`);
@@ -56,7 +56,7 @@ const ALLOCS: [AutoCfg["alloc"], string, string][] = [
 const curOf = curFor;
 
 function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void }) {
-  const [cfg, setCfg] = useState<AutoCfg>(() => ({ ...DEFAULT, ...store<Partial<AutoCfg>>("autoCfg2", {}) }));
+  const [cfg, setCfg] = useState<AutoCfg>(() => ({ ...DEFAULT, ...store<Partial<AutoCfg>>("autoCfg3", {}) }));
   const set = (p: Partial<AutoCfg>) => setCfg((c) => { const n = { ...c, ...p }; save("autoCfg2", n); return n; });
   const [pv, setPv] = useState<AutoPreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -115,7 +115,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
         </div>
         <Choice label="How to share the money" value={cfg.alloc} options={ALLOCS.map(([v, l]) => [v, l] as [AutoCfg["alloc"], string])} onChange={(alloc) => set({ alloc })} help={ALLOCS.find((a) => a[0] === cfg.alloc)![2]} />
         <Choice label="Come back in" value={cfg.horizon} options={HORIZONS} onChange={(horizon) => set({ horizon })} />
-        <Choice label="How strict" value={cfg.strict} options={STRICT.map((s) => [s, s === 100 ? "100%" : `${s}%+`] as [number, string])} onChange={(strict) => set({ strict })} help={cfg.strict < 80 ? "Below 80% is practice level: the books don't fully approve these, but every must-pass rule holds, the entry signal has fired and the reward is at least twice the risk." : "80% and up means the books approve the trade. Higher means fewer, cleaner trades."} />
+        <p className="ctx-note">Auto-trade takes only Viko-approved trades: its tested edge (daily-chart wave-3 buys in an uptrend, in stocks, funds, indices or commodities). These usually take weeks, so "Up to 2 months" fits them; shorter windows find few or none. Crypto-only brokers (Binance, Bybit) can't trade these markets: use MT5 or Deriv.</p>
         <Choice label="Risk" value={cfg.risk} options={RISKS.map(([v, l]) => [v, l] as [AutoCfg["risk"], string])} onChange={(risk) => set({ risk })} help={`Sets the leverage so a trade that hits its stop-loss loses ${RISKS.find((r) => r[0] === cfg.risk)![2]}.`} />
         <label className="check auto-fallback"><input type="checkbox" checked={cfg.fallback} onChange={(e) => set({ fallback: e.target.checked })} /> If too few trades meet my bar, fill the empty slots with the next best setups (each still passes every must-pass rule and is marked "below your bar").</label>
       </div>
@@ -188,7 +188,7 @@ function Start({ appKey, onStarted }: { appKey: string; onStarted: () => void })
 function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; cfg: AutoCfg; horizon: string; onFix: (p: Partial<AutoCfg>) => void }) {
   const where = cfg.broker === "both" ? "your brokers" : brokerLabel(cfg.broker);
   const steps: [number, string][] = [
-    [d.quality, `market${d.quality === 1 ? "" : "s"} score ${cfg.strict}% or more right now${d.examples.length ? ` (${d.examples.join(", ")})` : ""}`],
+    [d.quality, `market${d.quality === 1 ? "" : "s"} approved by Viko right now${d.examples.length ? ` (${d.examples.join(", ")})` : ""}`],
     [d.time, `of them can reach target 1 within ${horizon}`],
     [d.broker, `of those can be traded on ${where}`],
     [d.news, "have no big news in the next 3 hours"],
@@ -196,9 +196,9 @@ function Why({ d, cfg, horizon, onFix }: { d: NonNullable<AutoPreview["diag"]>; 
   const stop = steps.findIndex(([n]) => n === 0);
   const fixes: [string, Partial<AutoCfg>][] = [];
   if (!cfg.fallback) fixes.push(["Allow next-best setups", { fallback: true }]);
-  if (cfg.strict > 65) fixes.push([`Try ${Math.max(65, cfg.strict - 10)}%+`, { strict: Math.max(65, cfg.strict - 10) }]);
+
   if (cfg.broker !== "both") fixes.push(["Use every broker", { broker: "both" }]);
-  if (cfg.horizon !== "72h") fixes.push(["Try 72 hours", { horizon: "72h" }]);
+  if (cfg.horizon !== "2m") fixes.push(["Try up to 2 months", { horizon: "2m" }]);
   return (
     <div className="auto-why">
       <p className="sub">Why: Viko narrowed today's picks step by step.</p>
@@ -215,8 +215,7 @@ export function Running({ appKey, onOpen }: { appKey: string; onOpen: (id: strin
   const [busy, setBusy] = useState("");
   const load = async (refresh: boolean) => { try { setSt(await auto.state(appKey, refresh)); setErr(""); } catch (e) { setErr((e as Error).message); } };
   useEffect(() => { load(true); const t = setInterval(() => load(true), 60000); return () => clearInterval(t); }, [appKey]);
-  const collect = async (b: { plan_id?: string; position_id?: string }, what: string) => {
-    if (!confirm(`Close ${what} now at the current price and keep the result?`)) return;
+  const collect = async (b: { plan_id?: string; position_id?: string }, _what: string) => {
     setBusy(b.plan_id ?? b.position_id ?? "");
     try { await auto.close(appKey, b); await load(false); } catch (e) { setErr((e as Error).message); }
     setBusy("");
@@ -235,11 +234,11 @@ export function Running({ appKey, onOpen }: { appKey: string; onOpen: (id: strin
         <div className="pick-head">
           <div>
             <h3>{money(p.amount, c)} on {p.broker === "binance" ? "Binance" : "Deriv"} <span className={`bn-mode ${p.mode === "live" ? "live" : ""}`}>{p.mode === "live" ? "LIVE" : "Demo"}</span></h3>
-            <p className="sub">{p.count} trade{p.count > 1 ? "s" : ""}, {p.strict}%+ only, {p.risk} risk. {p.status === "active" ? `Ends in ${left(p.ends_at, st.now)}.` : `Finished ${new Date(p.closed_at ?? p.ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}.`}</p>
+            <p className="sub">{p.count} trade{p.count > 1 ? "s" : ""}, Viko-approved only, {p.risk} risk. {p.status === "active" ? `Ends in ${left(p.ends_at, st.now)}.` : `Finished ${new Date(p.closed_at ?? p.ends_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}.`}</p>
           </div>
           <div className="auto-total"><span className="sub">{p.status === "active" ? "So far" : "Result"}</span><b className={`mono ${total >= 0 ? "pos-c" : "neg"}`}>{signed(total, c)}</b></div>
         </div>
-        {pos.length === 0 && p.status === "active" && <p className="muted">Watching for a setup that meets {p.strict}%. New entries until {new Date(p.enter_until).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}.</p>}
+        {pos.length === 0 && p.status === "active" && <p className="muted">Watching for a Viko-approved setup. New entries until {new Date(p.enter_until).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}.</p>}
         {pos.map((x) => (
           <div key={x.id} className={`auto-pos ${x.status}`}>
             <div className="auto-pos-head">
@@ -254,11 +253,11 @@ export function Running({ appKey, onOpen }: { appKey: string; onOpen: (id: strin
               <span>Targets {fmt(x.target1)} / {fmt(x.target2)}</span>
             </div>
             {x.status === "open"
-              ? <button className="btn" disabled={busy === x.id} onClick={() => collect({ position_id: x.id }, `${x.label}`)}>{busy === x.id ? "Closing…" : "Collect now"}</button>
+              ? <ConfirmButton className="btn" busy={busy === x.id} label={busy === x.id ? "Closing…" : "Collect now"} question={`Close ${x.label} now at the current price and keep the result?`} yes="Yes, close it" onConfirm={() => collect({ position_id: x.id }, `${x.label}`)} />
               : <span className="sub">Closed: {x.close_reason}</span>}
           </div>
         ))}
-        {p.status === "active" && <div className="row"><span /><button className="btn" disabled={busy === p.id} onClick={() => collect({ plan_id: p.id }, "every trade in this plan")}>{busy === p.id ? "Closing…" : "Collect everything now"}</button></div>}
+        {p.status === "active" && <div className="row"><span /><ConfirmButton className="btn" busy={busy === p.id} label={busy === p.id ? "Closing…" : "Collect everything now"} question="Close every trade in this plan now at the current price?" yes="Yes, close them all" onConfirm={() => collect({ plan_id: p.id }, "every trade in this plan")} /></div>}
       </article>
     );
   };
@@ -346,7 +345,7 @@ export function Results({ appKey }: { appKey: string }) {
                 <td>{new Date(r.closed_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}<span className="sub">{r.broker} {r.mode}</span></td>
                 <td>{r.label}<span className="sub">{r.tf}</span></td><td>{r.dir === "long" ? "Buy" : "Sell"} {r.leverage}x</td>
                 <td className="r mono">{r.stake.toFixed(2)}</td><td>{r.close_reason}</td><td className={`r mono ${r.pnl >= 0 ? "pos-c" : "neg"}`}>{signed(r.pnl)}</td>
-                <td><button className="link" onClick={() => del({ ids: [r.id] })}>Delete</button></td>
+                <td><ConfirmButton className="link" label="Delete" question="Delete this result from the history?" yes="Yes, delete" onConfirm={() => del({ ids: [r.id] })} /></td>
               </tr>
             ))}</tbody>
           </table>

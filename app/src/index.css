@@ -684,3 +684,13 @@ html[data-theme="light"] .btn.bn-btn { border-color: #8A6416; color: #8A6416; }
 .wait-ctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 6px; font-size: 13.5px; }
 .wait-ctl .small-in { max-width: 150px; }
 .ask-banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Confirm-before-acting buttons */
+.confirm-box { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 6px; border: 1px solid var(--anemone, #c0392b); border-radius: 8px; background: var(--hull); }
+.confirm-q { font-size: 13px; margin-right: 4px; }
+.btn.danger { background: var(--anemone, #c0392b); border-color: var(--anemone, #c0392b); color: #fff; }
+
+.open-note { border-left: 4px solid var(--kelp, #2e7d32); margin-bottom: 12px; }
+.open-note p { margin: 4px 0; }
+.count-check { margin-top: 10px; } .count-check summary { cursor: pointer; } .count-check ul { margin: 6px 0 0; padding-left: 18px; }
+.health-bad { border-left: 4px solid var(--anemone, #c0392b); } .health-ok { border-left: 4px solid var(--kelp, #2e7d32); }

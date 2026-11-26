@@ -18,6 +18,8 @@ import { BinanceTicket, type BnTradeIdea } from "./components/Binance";
 import RealTrade from "./components/RealTrade";
 import MyTrades from "./components/MyTrades";
 import { TrackRecord } from "./components/TrackRecord";
+import OpenTradeNote from "./components/OpenTradeNote";
+import CountCheck from "./components/CountCheck";
 import { ApprovalBanner } from "./components/WhenToOpen";
 import PhoneSetup, { takeSetupKey } from "./components/PhoneSetup";
 import PaperTicket, { type PaperPick } from "./components/PaperTicket";
@@ -71,7 +73,8 @@ export default function App() {
   const [realPicks, setRealPicks] = useState<AutoPick[] | null>(null);
   const [paperPicks, setPaperPicks] = useState<PaperPick[] | null>(null);
   const [account, setAccount] = useState<number>(() => store("account", 10000));
-  const [riskPct, setRiskPct] = useState<number>(() => store("risk", 1));
+  // Default 0.5%: the Monte Carlo stress test (Nov 2026) showed 1% risk per trade can mean a 27% drawdown in a bad run.
+  const [riskPct, setRiskPct] = useState<number>(() => store("risk2", 0.5));
   const [setupDone, setSetupDone] = useState(false);
   const [setupNote] = useState(() => { const k = takeSetupKey(); if (k) save("jkey", k); return k ? "This device is set up with your app key. Install it from Settings → Install on this device." : ""; });
   const [jkey, setJkey] = useState<string>(() => store("jkey", ""));
@@ -130,7 +133,7 @@ export default function App() {
   useEffect(() => save("watchlist2", list), [list]);
   useEffect(() => save("ind", ind), [ind]);
   useEffect(() => { save("inst", inst); save("tf", tf); }, [inst, tf]);
-  useEffect(() => { save("account", account); save("risk", riskPct); save("jkey", jkey); }, [account, riskPct, jkey]);
+  useEffect(() => { save("account", account); save("risk2", riskPct); save("jkey", jkey); }, [account, riskPct, jkey]);
   // Keep the server-side autopilot scanning the same watchlist you see.
   useEffect(() => {
     if (!jkey) return;
@@ -299,7 +302,9 @@ export default function App() {
                 </div>
                 <div className="side">
                   <div className="tip-desktop">{tipEl}</div>
+                  {jkey && <OpenTradeNote appKey={jkey} symbol={inst.id} />}
                   {analysis && <VerdictPanel symbol={inst.label} tfLabel={TF_LABEL[tf]} analysis={analysis} setup={setup} onPick={setPick} account={account} riskPct={riskPct} onSave={saveSignal} saving={saving} />}
+                  {analysis && <CountCheck candles={base} tf={tf} symbol={inst.id} />}
                   <NewsPanel news={news} loading={newsLoading} error={newsErr} setup={setup} />
                 </div>
               </div>

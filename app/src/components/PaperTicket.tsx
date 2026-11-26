@@ -22,7 +22,7 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
   const many = picks.length > 1;
   const [amount, setAmount] = useState<number>(() => store("paperAmount", 100));
   const [split, setSplit] = useState<Split>(() => store("paperSplit", "each"));
-  const [closeAfter, setCloseAfter] = useState<number>(() => store("paperCloseAfter", 0));
+  const [closeAfter, setCloseAfter] = useState<number>(() => (picks.every((p) => p.tf === "1d") ? 0 : store("paperCloseAfter", 0)));
   const [balance, setBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -85,7 +85,8 @@ export default function PaperTicket({ picks, appKey, onClose, onNeedKey, onDone 
                 {balance != null && Number.isFinite(balance) && <small className="sub">Paper balance: ${balance.toFixed(2)}</small>}
               </label>
               <div className="auto-field"><span className="auto-label">Close it</span>
-                <div className="seg wrap" role="radiogroup" aria-label="Close it">{([[0, "At target or stop"], [24, "Within 24 h"], [48, "Within 48 h"], [72, "Within 72 h"], [168, "Within a week"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={closeAfter === v} className={closeAfter === v ? "on" : ""} onClick={() => setCloseAfter(v)}>{l}</button>)}</div>
+                <div className="seg wrap" role="radiogroup" aria-label="Close it">{([[0, "At target or stop (up to 2 months)"], [24, "Within 24 h"], [48, "Within 48 h"], [72, "Within 72 h"], [168, "Within a week"]] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={closeAfter === v} className={closeAfter === v ? "on" : ""} onClick={() => setCloseAfter(v)}>{l}</button>)}</div>
+                {closeAfter > 0 && picks.some((p) => p.tf === "1d") && <small className="err">Daily-chart trades usually need weeks: in testing, half took over a month. A short time limit cuts most of them before they pay.</small>}
                 <small className="sub">{closeAfter ? `If a trade hasn't reached its target or stop after ${closeAfter} hours, Viko closes it at the market price so you see the result.` : "Each trade stays open until it reaches its targets or its (trailing) stop-loss."}</small>
               </div>
               {many && (

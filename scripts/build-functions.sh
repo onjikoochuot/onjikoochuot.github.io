@@ -22,3 +22,8 @@ for f in viko-auto viko-picks viko-paper viko-notify; do
   app/node_modules/.bin/esbuild supabase/functions/$f/index.ts --bundle --format=esm --platform=neutral --target=es2022 --external:'jsr:*' --external:'npm:*' --external:'https://*' --outfile=supabase/functions/$f/main.js --log-level=warning
   sed -i '/edge-runtime.d.ts/d' supabase/functions/$f/main.js
 done
+# Keep the test stand-in for the pinned engine at the path the current pin points to (tests import it through the import map).
+PIN=$(grep -o 'onjikoochuot.github.io@[0-9a-f]*/supabase/functions/viko-paper/engine.js' supabase/functions/viko-paper/index.ts | head -1 | cut -d@ -f2 | cut -d/ -f1)
+SRC=$(find supabase/functions/tests/stubs/cdn -name engine.js | head -1)
+DEST=supabase/functions/tests/stubs/cdn/gh/onjikoochuot/onjikoochuot.github.io@$PIN/supabase/functions/viko-paper/engine.js
+if [ -n "$PIN" ] && [ -n "$SRC" ] && [ "$SRC" != "$DEST" ]; then mkdir -p "$(dirname "$DEST")" && cp "$SRC" "$DEST"; fi

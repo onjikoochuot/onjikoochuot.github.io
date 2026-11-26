@@ -31,6 +31,7 @@ const HORIZONS: Record<string, { h: number; tfs: string[]; name: string }> = {
   "72h": { h: 72, tfs: ["30m", "1h", "2h", "4h", "1d"], name: "72 hours" },
   "1w": { h: 168, tfs: ["1h", "2h", "4h", "1d"], name: "1 week" },
   "1m": { h: 720, tfs: ["4h", "1d", "1w"], name: "1 month" },
+  "2m": { h: 1440, tfs: ["1d"], name: "up to 2 months" },
 };
 const RISK: Record<string, number> = { careful: 0.1, balanced: 0.2, bold: 0.35, max: 0.5 };
 const ALL_TFS = Object.keys(TF_H);
@@ -446,8 +447,10 @@ async function candidates(db: DB, cfg: Cfg, v: Venues, exclude: Set<string>, wan
   for (const r of rows) by.set(r.symbol, [...(by.get(r.symbol) ?? []), r]);
   const lean = (r: any) => (r.setup && !r.hard_fail && (r.score ?? 0) >= 55 ? r.dir : null);
   // 80%+ = book-approved. 65-75 = practice level: triggered, rule-clean, 2R+. Fallback (below the bar): 55%+, triggered, rule-clean, 1.5R+.
-  const atBar = (r: any) => (r.score ?? 0) >= cfg.strict && (r.verdict === "APPROVED" || (cfg.strict < 80 && r.verdict === "WATCH" && r.triggered && !r.hard_fail && (r.rr1 ?? 0) >= 2));
-  const nearBar = (r: any) => !atBar(r) && (r.score ?? 0) >= 55 && !r.hard_fail && r.triggered && (r.rr1 ?? 0) >= 1.5 && r.verdict !== "NO TRADE";
+  // Only Viko-approved trades (the tested edge). The rule score no longer decides: in testing it didn't predict wins,
+  // and the "near the bar" fallback would have placed unapproved trades, so it is switched off.
+  const atBar = (r: any) => r.verdict === "APPROVED";
+  const nearBar = (_r: any) => false;
   const fitsTime = (r: any) => hz.tfs.includes(r.tf) && (r.setup.expectBars ?? 3) * TF_H[r.tf] * 0.6 <= hz.h;
   // Only news due in the next 3 hours blocks a new trade; the stop-loss covers anything later.
   const newsSoon = (r: any) => { const m = String(r.news_warn ?? "").match(/is due (\S+)$/); const at = m ? Date.parse(m[1]) : NaN; return !!r.news_warn && (!Number.isFinite(at) || (at > now && at - now <= 3 * 3600000)); };

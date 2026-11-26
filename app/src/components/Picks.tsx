@@ -37,7 +37,7 @@ export default function Picks({ account, riskPct, onOpen, onReal, onPaper }: { a
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>(() => store("picksTab", "top"));
-  const [bar, setBar] = useState<Bar>(() => store("picksBar", 95));
+  const [bar, setBar] = useState<Bar>(() => store("picksBar2", 0 as Bar));
   const msg = "";
   const placing = "";
   const [picked, setPicked] = useState<Record<string, PickRow>>({});
@@ -51,7 +51,7 @@ export default function Picks({ account, riskPct, onOpen, onReal, onPaper }: { a
   };
   useEffect(() => { load(); const t = setInterval(load, 120000); return () => clearInterval(t); }, []);
   useEffect(() => save("picksTab", tab), [tab]);
-  useEffect(() => save("picksBar", bar), [bar]);
+  useEffect(() => save("picksBar2", bar), [bar]);
 
   const fresh = useMemo(() => rows.filter((r) => isFresh(r, now)), [rows, now]);
   const approved = (min: number) => fresh.filter((r) => r.verdict === "APPROVED" && (r.score ?? 0) >= min).sort((a, b) => (b.score! - a.score!) || (b.rr1! - a.rr1!));

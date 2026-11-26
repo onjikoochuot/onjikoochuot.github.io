@@ -151,6 +151,35 @@ function HistoryTest() {
   );
 }
 
+// ---------- Timeframe report card and live health ----------
+const TF_CARD: [string, string, string, string, string, string][] = [
+  ["15m", "99", "28%", "−0.17R", "+0.14R", "No edge: too few winners after costs"],
+  ["1h", "454", "32%", "+0.03R", "−0.11R", "No edge"],
+  ["4h", "153", "29%", "−0.07R", "−0.59R", "Loses, worst on recent data"],
+  ["1d", "997", "43%", "+0.26R", "+0.33R", "Viko's tested edge"],
+  ["1w", "62", "33%", "−0.11R", "−0.31R", "No edge, few trades"],
+  ["1M", "–", "–", "–", "–", "Can't be tested: too little monthly history"],
+];
+const TESTED_AVG = 0.257, TESTED_SD = 1.42; // daily edge, 997 trades
+
+/** Rolling check of the last 30 daily stock/fund/commodity buys against the tested numbers ("observation mode" warning). */
+function EdgeHealth({ rows }: { rows: Row[] }) {
+  const edgeLike = rows.filter((r) => r.tf === "1d" && r.r !== null && !r.symbol.startsWith("crypto:") && !r.symbol.endsWith("=X")).sort((a, b) => b.at - a.at).slice(0, 30);
+  if (edgeLike.length < 10) return (
+    <section className="card tr-section"><h3>Edge health</h3><p className="sub">After 10 or more finished daily trades in stocks, funds or commodities, this compares your last 30 with the tested numbers and warns you if they fall well short. {edgeLike.length} so far.</p></section>
+  );
+  const avg = edgeLike.reduce((a, r) => a + (r.r ?? 0), 0) / edgeLike.length;
+  const low = TESTED_AVG - 2 * TESTED_SD / Math.sqrt(edgeLike.length); // lower 95% bound for a sample this size
+  const bad = avg < low;
+  return (
+    <section className={`card tr-section ${bad ? "health-bad" : "health-ok"}`}>
+      <h3>Edge health: {bad ? "warning" : "on track"}</h3>
+      <p>Your last {edgeLike.length} daily trades in stocks, funds and commodities averaged <b className="mono">{rr(avg)}</b>. Tested: {rr(TESTED_AVG)}; anything above {rr(low)} is normal luck for {edgeLike.length} trades.</p>
+      <p className="sub">{bad ? "That's below what bad luck alone usually explains. Switch to paper-only until the next check-up re-tests the rule, and don't add real money." : "Keep going. Short losing streaks are normal: 4 of 14 test years lost money."}</p>
+    </section>
+  );
+}
+
 // ---------- The page ----------
 export function TrackRecord({ appKey, onNeedKey }: { appKey: string; onNeedKey: () => void }) {
   const [src, setSrc] = useState<"paper" | "real">("paper");
@@ -205,6 +234,20 @@ export function TrackRecord({ appKey, onNeedKey }: { appKey: string; onNeedKey: 
               )}
             </>
           )}
+      </section>
+
+      <EdgeHealth rows={paperRows ?? []} />
+
+      <section className="card tr-section">
+        <h3>Which timeframes work (tested Nov 2026)</h3>
+        <p className="sub">The same rule (buy, wave-3 entry, uptrend, stop at least 1.5× the average range, stocks, funds, indices or commodities) replayed on each timeframe, after costs. "Recent" is the newest 30% of the data, which the rule was never tuned on.</p>
+        <table className="tbl compact tr-table">
+          <thead><tr><th>Timeframe</th><th className="r">Trades</th><th className="r">Won</th><th className="r">Average</th><th className="r">Recent</th><th>Verdict</th></tr></thead>
+          <tbody>
+            {TF_CARD.map(([tf, n, w, a, rec, v]) => <tr key={tf}><td className="mono">{tf}</td><td className="r mono">{n}</td><td className="r mono">{w}</td><td className={`r mono ${String(a).startsWith("+") ? "bull" : String(a).startsWith("−") ? "bear" : ""}`}>{a}</td><td className={`r mono ${String(rec).startsWith("+") ? "bull" : String(rec).startsWith("−") ? "bear" : ""}`}>{rec}</td><td className="sub">{v}</td></tr>)}
+          </tbody>
+        </table>
+        <p className="sub">Stress test of the daily rule (2,000 shuffled runs, 10% of winners removed, costs doubled): profitable in every run. At 0.5% risk per trade the worst 5% of runs fell 14% from a peak; at 1% risk, 27%. That's why Viko suggests risking 0.5% per trade. A machine-learning filter trained on the older data did not beat the rule on the newer data, so Viko doesn't use one yet.</p>
       </section>
 
       <HistoryTest />
