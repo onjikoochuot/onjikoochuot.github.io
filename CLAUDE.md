@@ -29,3 +29,6 @@ Daily chart, buy only, wave-3 entry, close above EMA200, stop ≥ 1.5× ATR, sto
 - App: `app/` (React + Vite + TypeScript). Checks: `npx tsc --noEmit -p tsconfig.app.json`, `npx vitest run`, browser tests `app/tests/*.mjs`.
 - Server: `supabase/functions/` (Supabase project fkrgiaeglingmogcsyik). Loaders pin a compiled `main.js` by commit; `scripts/build-functions.sh` builds everything; an engine change needs two commits (build engine.js, then repin). Server tests: from `supabase/functions`, `deno test --no-check --allow-env --import-map=tests/import_map.json tests/managers.test.ts`.
 - Lab: GitHub Actions "Viko lab" → results on the `lab-data` branch; analysis `lab/analyze.py`, `lab/combos.py`, `lab/audit.py`, `lab/sprint*.py`. Notes and idea checklist: `lab/research/`.
+
+## Data connectors
+- Alpha Vantage connector (free key, connected Nov 26 2026): ~25 requests/day, max ~1/second — call it one request at a time. On this plan the per-symbol earnings calendar returned empty and NEWS_SENTIMENT is premium-only. Use it for occasional checks (quotes, fundamentals, economic data), not for scanning. Never write the key into the repo (it's public).
